@@ -241,7 +241,7 @@ const exportToWord = () => {
                     <button className="bg-slate-700 text-white px-4 py-2 rounded font-bold" onClick={()=>setModalType("manageMachines")}>⚙️ 機具庫</button>
                     <button className="bg-green-700 text-white px-4 py-2 rounded font-bold" onClick={exportToExcel}>📊 匯出 Excel</button>
                     <button className="bg-blue-800 text-white px-4 py-2 rounded font-bold" onClick={exportToWord}>📝 匯出 Word</button>
-                    <button className="bg-cyan-600 text-white px-4 py-2 rounded font-bold mr-2" onClick={syncToGoogleSheets}>☁️ 同步雲端</button>
+                    <button className="bg-cyan-600 text-white px-4 py-2 rounded font-bold mr-2 shadow-md hover:bg-cyan-700"onClick={syncToCloudBackup}>☁️ 同步備份</button> 
                     <button className="bg-gray-800 text-white px-6 py-2 rounded font-bold ml-auto" onClick={()=>window.print()}>🖨️ 列印分析報表</button>
                 </div>
             </div>
