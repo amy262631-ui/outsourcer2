@@ -59,16 +59,42 @@ function App() {
         try {
             const response = await fetch(GAS_URL);
             const cloudData = await response.json();
-            if (cloudData.projects) setProjects(cloudData.projects.map(p => ({ id: String(p["工程ID"]), name: String(p["工程名稱"]) })));
-            if (cloudData.equipments) setMachineOptions(sortMachines([...new Set(cloudData.equipments.map(e => e["機具名稱"]))]));
+
+            // 1. 同步工程
+            if (cloudData.projects) {
+                setProjects(cloudData.projects.map(p => ({ id: String(p["工程ID"]), name: p["工程名稱"] })));
+            }
+
+            // 2. 同步機具庫
+            if (cloudData.equipments) {
+                setMachineOptions(cloudData.equipments.map(e => e["機具名稱"]));
+            }
+
+            // 3. 同步預估紀錄 (關鍵：將雲端表格轉回網頁格式)
+            if (cloudData.plans && cloudData.plans.length > 0) {
+                const newPlansMap = {};
+                cloudData.plans.forEach(p => {
+                    // 找出對應的工程 ID
+                    const matchedProj = projects.find(proj => proj.name === p["工程名稱"]);
+                    const pId = matchedProj ? matchedProj.id : null;
+                    if (pId) {
+                        if (!newPlansMap[pId]) newPlansMap[pId] = [];
+                        newPlansMap[pId].push({
+                            id: Date.now() + Math.random(),
+                            task: p["預計工作內容"],
+                            labor: p["外包"],
+                            support: p["何鑫"],
+                            machines: JSON.parse(p["機具組合"] || "[]")
+                        });
+                    }
+                });
+                setProjectPlans(newPlansMap);
+            }
             
-            // 處理實際紀錄下載邏輯 (範例簡化)
-            const time = new Date().toLocaleTimeString();
-            setSyncStatus({ loading: false, lastTime: time });
-            save("lastSyncTime", time);
-            alert("📥 雲端資料同步完成！");
+            setSyncStatus({ loading: false, lastTime: new Date().toLocaleTimeString() });
+            alert("📥 雲端同步成功！機具與預估資料已載入。");
         } catch (error) {
-            alert("同步失敗，請檢查 GAS 部署");
+            alert("同步失敗，請確認 GAS 是否已發布新版本");
             setSyncStatus(prev => ({ ...prev, loading: false }));
         }
     };
