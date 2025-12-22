@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>雲端工程工數吊車分析對照系統</title>
+    <title>工程工數吊車分析對照系統 - 全功能同步版</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
@@ -53,7 +53,7 @@ function App() {
     const currentPlans = projectPlans[currentProjectId] || [];
     const isCompleted = projectStatus[currentProjectId] || false;
 
-    // --- 同步功能 ---
+    // --- 同步核心 ---
     const downloadFromCloud = async () => {
         setSyncStatus(prev => ({ ...prev, loading: true }));
         try {
@@ -61,12 +61,14 @@ function App() {
             const cloudData = await response.json();
             if (cloudData.projects) setProjects(cloudData.projects.map(p => ({ id: String(p["工程ID"]), name: String(p["工程名稱"]) })));
             if (cloudData.equipments) setMachineOptions(sortMachines([...new Set(cloudData.equipments.map(e => e["機具名稱"]))]));
+            
+            // 處理實際紀錄下載邏輯 (範例簡化)
             const time = new Date().toLocaleTimeString();
             setSyncStatus({ loading: false, lastTime: time });
             save("lastSyncTime", time);
-            alert("📥 雲端資料同步成功！");
+            alert("📥 雲端資料同步完成！");
         } catch (error) {
-            alert("同步失敗，請檢查網路或 GAS 部署");
+            alert("同步失敗，請檢查 GAS 部署");
             setSyncStatus(prev => ({ ...prev, loading: false }));
         }
     };
@@ -87,9 +89,7 @@ function App() {
             const time = new Date().toLocaleTimeString();
             setSyncStatus({ loading: false, lastTime: time });
             save("lastSyncTime", time);
-        } catch (error) {
-            setSyncStatus(prev => ({ ...prev, loading: false }));
-        }
+        } catch (error) { setSyncStatus(prev => ({ ...prev, loading: false })); }
     };
 
     // --- 匯出功能 ---
@@ -111,6 +111,7 @@ function App() {
         link.click();
     };
 
+    // --- 狀態持久化 ---
     React.useEffect(() => {
         save("projects", projects); save("currentProjectId", currentProjectId);
         save("companies", companies); save("currentCompany", currentCompany);
@@ -118,10 +119,12 @@ function App() {
         save("machineOptions", machineOptions); save("projectStatus", projectStatus);
     }, [projects, currentProjectId, companies, currentCompany, records, projectPlans, machineOptions, projectStatus]);
 
+    // --- 計算邏輯 ---
     const projectRecords = records.filter(r => r.projectId === currentProjectId && r.company === currentCompany);
     const dailyDetails = {};
     projectRecords.forEach(r => {
         if (!dailyDetails[r.date]) dailyDetails[r.date] = { labor: 0, support: 0, machines: [], notes: [], raw: [] };
+        dailyDetails[r.date].raw.push(r);
         if (r.type === "labor") {
             dailyDetails[r.date].labor += Number(r.labor || 0);
             dailyDetails[r.date].support += Number(r.support || 0);
@@ -145,6 +148,7 @@ function App() {
     const actMachineStats = {};
     projectRecords.filter(r => r.type === "crane").forEach(r => { actMachineStats[r.spec] = (actMachineStats[r.spec] || 0) + (Number(r.hr) / 8); });
 
+    // --- 圖表 ---
     const pieRef = React.useRef(null);
     const chartRef = React.useRef(null);
     React.useEffect(() => {
@@ -161,18 +165,18 @@ function App() {
 
     return (
         <div className="max-w-7xl mx-auto pb-10">
-            {/* 功能選單 */}
+            {/* 頂部功能選單 */}
             <div className="no-print bg-white p-6 rounded-xl shadow mb-6 border">
                 <div className="flex flex-wrap gap-4 items-center">
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 mr-4">
                         <span className={`w-3 h-3 rounded-full ${syncStatus.loading ? 'bg-yellow-400 animate-pulse' : 'bg-green-500'}`}></span>
-                        <span className="text-sm font-bold text-gray-500">{syncStatus.lastTime}</span>
+                        <span className="text-sm font-bold text-gray-500">{syncStatus.loading ? "連線中..." : `同步: ${syncStatus.lastTime}`}</span>
                     </div>
                     <select className="border-2 p-2 rounded font-bold" value={currentCompany} onChange={e=>setCurrentCompany(e.target.value)}>
                         {companies.map(c => <option key={c} value={c}>{c}</option>)}
                     </select>
                     <button className="bg-amber-500 text-white px-4 py-2 rounded font-bold" onClick={downloadFromCloud}>🔄 同步最新</button>
-                    <div className="h-8 border-r"></div>
+                    <div className="h-8 border-r mx-2"></div>
                     <select className="border-2 p-2 rounded font-bold text-blue-900" value={currentProjectId} onChange={e=>setCurrentProjectId(e.target.value)}>
                         <option value="">選擇工程</option>
                         {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
@@ -187,7 +191,7 @@ function App() {
             </div>
 
             <div id="export-area">
-                {/* 報表內容保持原樣... */}
+                {/* 1. 報價前預估規劃 */}
                 <div className="print-section bg-white p-6 rounded-xl shadow-lg mb-8 border-t-8 border-blue-900">
                     <h2 className="text-2xl font-black text-blue-900 mb-4">📋 預估規劃 - {currentCompany} - {currentProject?.name}</h2>
                     <table className="w-full border-collapse">
@@ -197,55 +201,112 @@ function App() {
                                 <th className="border p-3 text-left">內容</th>
                                 <th className="border p-3 w-28">外包</th>
                                 <th className="border p-3 w-28">何鑫</th>
-                                <th className="border p-3">機具</th>
-                                <th className="border p-3 w-20 no-print">操作</th>
+                                <th className="border p-3">機具組合</th>
+                                <th className="border p-3 w-32 no-print">操作</th>
                             </tr>
                         </thead>
                         <tbody>
                             {currentPlans.map((p, i) => (
-                                <tr key={p.id}>
-                                    <td className="border p-2 text-center">{i+1}</td>
-                                    <td className="border p-2"><textarea className="w-full" rows="1" value={p.task} onChange={e=>setProjectPlans({...projectPlans,[currentProjectId]:currentPlans.map(x=>x.id===p.id?{...x,task:e.target.value}:x)})} onBlur={()=>syncToCloud()}/></td>
-                                    <td className="border p-2"><input type="number" className="w-full text-center" value={p.labor} onChange={e=>setProjectPlans({...projectPlans,[currentProjectId]:currentPlans.map(x=>x.id===p.id?{...x,labor:e.target.value}:x)})} onBlur={()=>syncToCloud()}/></td>
-                                    <td className="border p-2"><input type="number" className="w-full text-center" value={p.support} onChange={e=>setProjectPlans({...projectPlans,[currentProjectId]:currentPlans.map(x=>x.id===p.id?{...x,support:e.target.value}:x)})} onBlur={()=>syncToCloud()}/></td>
+                                <tr key={p.id} className="hover:bg-blue-50">
+                                    <td className="border p-2 text-center font-bold text-gray-400">{i+1}</td>
+                                    <td className="border p-2"><textarea className="w-full bg-transparent" rows="1" value={p.task} onChange={e=>setProjectPlans({...projectPlans,[currentProjectId]:currentPlans.map(x=>x.id===p.id?{...x,task:e.target.value}:x)})} onBlur={()=>syncToCloud()}/></td>
+                                    <td className="border p-2"><input type="number" className="w-full text-center text-blue-700 font-bold" value={p.labor} onChange={e=>setProjectPlans({...projectPlans,[currentProjectId]:currentPlans.map(x=>x.id===p.id?{...x,labor:e.target.value}:x)})} onBlur={()=>syncToCloud()}/></td>
+                                    <td className="border p-2"><input type="number" className="w-full text-center text-yellow-600 font-bold" value={p.support} onChange={e=>setProjectPlans({...projectPlans,[currentProjectId]:currentPlans.map(x=>x.id===p.id?{...x,support:e.target.value}:x)})} onBlur={()=>syncToCloud()}/></td>
                                     <td className="border p-2">
-                                        {(p.machines || []).map((m, mi) => <div key={mi} className="text-xs">{m.spec} x {m.qty}</div>)}
+                                        {(p.machines || []).map((m, mi) => (
+                                            <div key={mi} className="flex gap-1 mb-1 items-center bg-gray-100 p-1 rounded no-print">
+                                                <select className="text-xs border" value={m.spec} onChange={e=>{const nm=p.machines.map((v,idx)=>idx===mi?{...v,spec:e.target.value}:v);setProjectPlans({...projectPlans,[currentProjectId]:currentPlans.map(x=>x.id===p.id?{...x,machines:nm}:x)});syncToCloud();}}>
+                                                    {sortMachines(machineOptions).map(opt=><option key={opt} value={opt}>{opt}</option>)}
+                                                </select>
+                                                <input type="number" className="w-10 text-xs text-center" value={m.qty} onChange={e=>{const nm=p.machines.map((v,idx)=>idx===mi?{...v,qty:e.target.value}:v);setProjectPlans({...projectPlans,[currentProjectId]:currentPlans.map(x=>x.id===p.id?{...x,machines:nm}:x)})}} onBlur={()=>syncToCloud()}/>
+                                                <button className="text-red-500 px-1" onClick={()=>{const nm=p.machines.filter((_,idx)=>idx!==mi);setProjectPlans({...projectPlans,[currentProjectId]:currentPlans.map(x=>x.id===p.id?{...x,machines:nm}:x)});syncToCloud();}}>✕</button>
+                                            </div>
+                                        ))}
                                         <button className="text-xs text-blue-600 no-print" onClick={()=>{const nm=[...(p.machines||[]),{spec:machineOptions[0],qty:1}];setProjectPlans({...projectPlans,[currentProjectId]:currentPlans.map(x=>x.id===p.id?{...x,machines:nm}:x)})}}>+ 機具</button>
                                     </td>
-                                    <td className="border p-2 text-center no-print"><button onClick={()=>{setProjectPlans({...projectPlans,[currentProjectId]:currentPlans.filter(x=>x.id!==p.id)});syncToCloud();}}>✕</button></td>
+                                    <td className="border p-2 text-center no-print">
+                                        <button className="text-red-500 font-bold hover:underline" onClick={()=>{if(confirm("確定刪除此天預估？")){setProjectPlans({...projectPlans,[currentProjectId]:currentPlans.filter(x=>x.id!==p.id)});syncToCloud();}}}>刪除</button>
+                                    </td>
                                 </tr>
                             ))}
                         </tbody>
+                        <tfoot className="bg-blue-900 text-white font-black text-lg">
+                            <tr><td colSpan="2" className="border p-2 text-right">預估合計：</td><td className="border p-2 text-center">{estTotalLabor}</td><td className="border p-2 text-center">{estTotalSupport}</td><td colSpan="2" className="border p-2">合計：{estTotalSum} 工</td></tr>
+                        </tfoot>
                     </table>
-                    <button className="no-print mt-4 bg-blue-100 p-2 rounded" onClick={()=>{setProjectPlans({...projectPlans,[currentProjectId]:[...currentPlans,{id:Date.now(),task:"",labor:0,support:0,machines:[]}]});}}>+ 新增天序</button>
+                    <button className="no-print mt-4 bg-blue-100 p-2 rounded font-bold" onClick={()=>{setProjectPlans({...projectPlans,[currentProjectId]:[...currentPlans,{id:Date.now(),task:"",labor:0,support:0,machines:[]}]});}}>+ 新增預估天序</button>
                 </div>
 
+                {/* 2. 實際執行明細 */}
                 <div className="print-section bg-white p-6 rounded-xl shadow-lg mb-8 border-t-8 border-green-700">
-                    <h2 className="text-2xl font-black text-green-800 mb-4 flex justify-between">
+                    <h2 className="text-2xl font-black text-green-800 mb-4 flex justify-between items-center">
                         <span>📅 實際明細 - {currentProject?.name}</span>
-                        <button className="no-print bg-green-600 text-white px-6 py-2 rounded-2xl" onClick={()=>{setModalType("entry")}}>📝 登打</button>
+                        <button className="no-print bg-green-600 text-white px-6 py-2 rounded-2xl font-bold text-xl shadow-lg" onClick={()=>{ setEntryForm({ date: new Date().toISOString().split('T')[0], labor: 0, support: 0, note: "", machines: [] }); setModalType("entry"); }}>📝 登打紀錄</button>
                     </h2>
                     <table className="w-full border-collapse actual-detail-table">
-                        <thead><tr className="table-header-darkblue"><th className="border p-4">日期</th><th className="border p-4">外包</th><th className="border p-4">何鑫</th><th className="border p-4">機具</th><th className="border p-4">記事</th></tr></thead>
+                        <thead>
+                            <tr className="table-header-darkblue font-sans">
+                                <th className="border p-4 w-44">日期</th>
+                                <th className="border p-4 w-28 text-blue-100">外包</th>
+                                <th className="border p-4 w-28 text-yellow-100">何鑫</th>
+                                <th className="border p-4">機具</th>
+                                <th className="border p-4">記事</th>
+                                <th className="border p-4 w-40 no-print">操作</th>
+                            </tr>
+                        </thead>
                         <tbody>
-                            {Object.entries(dailyDetails).map(([date, data]) => (
-                                <tr key={date}><td className="border p-4 text-center">{date}</td><td className="border p-4 text-center">{data.labor}</td><td className="border p-4 text-center">{data.support}</td><td className="border p-4">{data.machines.join(', ')}</td><td className="border p-4">{data.notes.join(' / ')}</td></tr>
+                            {Object.entries(dailyDetails).sort((a,b)=>a[0].localeCompare(b[0])).map(([date, data]) => (
+                                <tr key={date} className="hover:bg-green-50 border-b">
+                                    <td className="border p-4 text-center font-bold text-gray-500">{date}</td>
+                                    <td className="border p-4 text-center font-black text-blue-800">{data.labor}</td>
+                                    <td className="border p-4 text-center font-black text-orange-600">{data.support}</td>
+                                    <td className="border p-4 text-sm font-bold text-gray-700">{data.machines.join(', ')}</td>
+                                    <td className="border p-4 italic text-gray-600">{data.notes.join(' / ')}</td>
+                                    <td className="border p-4 text-center no-print">
+                                        <div className="flex justify-center gap-4">
+                                            <button className="text-blue-600 font-bold hover:underline" onClick={()=>{
+                                                const laborRec = data.raw.find(r => r.type === "labor") || { labor: 0, support: 0, note: "" };
+                                                const craneRecs = data.raw.filter(r => r.type === "crane").map(r => ({ spec: r.spec, hr: r.hr }));
+                                                setEntryForm({ date, labor: laborRec.labor, support: laborRec.support, note: laborRec.note, machines: craneRecs });
+                                                setRecords(records.filter(r => !(r.projectId === currentProjectId && r.company === currentCompany && r.date === date)));
+                                                setModalType("entry");
+                                            }}>編輯</button>
+                                            <button className="text-red-500 font-bold hover:underline" onClick={()=>{if(confirm("確定刪除？")){setRecords(records.filter(r=>!(r.projectId===currentProjectId && r.date===date)));syncToCloud();}}}>刪除</button>
+                                        </div>
+                                    </td>
+                                </tr>
                             ))}
                         </tbody>
+                        <tfoot className="bg-green-800 text-white font-black text-xl">
+                            <tr><td className="border p-4 text-right">實際合計：</td><td className="border p-4 text-center">{actTotalLabor}</td><td className="border p-4 text-center">{actTotalSupport}</td><td colSpan="3" className="border p-4 text-right pr-10">共 {actTotalSum} 工</td></tr>
+                        </tfoot>
                     </table>
                 </div>
 
+                {/* 3. 分析報表 */}
                 <div className="print-section bg-white p-8 rounded-xl shadow-2xl border-4 border-gray-800">
-                    <div className="grid grid-cols-2 gap-10">
+                    <h2 className="text-3xl font-black text-center mb-8 pb-4 border-b-4 border-gray-800">{currentProject?.name} 分析報表</h2>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
                         <div>
-                            <h3 className="font-bold text-2xl mb-4">工數分析</h3>
-                            <table className="w-full border-2 text-center">
-                                <thead className="bg-gray-800 text-white"><tr><th>預計</th><th>實際</th><th>偏差</th></tr></thead>
-                                <tbody><tr><td className="border p-2">{estTotalSum}</td><td className="border p-2">{actTotalSum}</td><td className="border p-2">{laborVariance}</td></tr></tbody>
+                            <h3 className="font-bold text-2xl mb-4 border-l-8 border-blue-900 pl-2">工數對比</h3>
+                            <table className="w-full border-2 border-gray-800 text-center text-xl mb-6">
+                                <thead className="bg-gray-800 text-white"><tr><th>項目</th><th>預計</th><th>實際</th><th>偏差</th></tr></thead>
+                                <tbody>
+                                    <tr><td className="border p-2">總工數</td><td className="border p-2">{estTotalSum}</td><td className="border p-2 text-blue-800 font-bold">{actTotalSum}</td><td className={`border p-2 font-bold ${laborVariance > 0 ? "text-red-600" : "text-green-700"}`}>{laborVariance > 0 ? "+" : ""}{laborVariance} ({variancePercent}%)</td></tr>
+                                </tbody>
                             </table>
+                            <div className="mt-8 p-6 bg-blue-50 border-4 border-blue-900 rounded-lg">
+                                <h4 className="text-2xl font-black mb-4">📈 狀態：{isCompleted ? "結案" : "施工中"}</h4>
+                                <input type="checkbox" className="no-print w-6 h-6 mr-2" checked={isCompleted} onChange={e=>{setProjectStatus({...projectStatus,[currentProjectId]:e.target.checked});syncToCloud();}}/>
+                                <span className="no-print font-bold">切換結案狀態</span>
+                            </div>
                         </div>
                         <div className="flex flex-col items-center">
-                            <h3 className="font-bold text-2xl mb-4 text-center">機具對比</h3>
+                            <h3 className="font-bold text-2xl mb-4 border-l-8 border-orange-500 pl-2 w-full text-center">機具對比</h3>
+                            <table className="w-full border-2 border-gray-800 text-center mb-6 font-bold">
+                                <thead className="bg-gray-800 text-white"><tr><th className="p-2 border">規格</th><th className="p-2 border">預計</th><th className="p-2 border">實際</th></tr></thead>
+                                <tbody>{Object.keys({...estMachineStats, ...actMachineStats}).sort().map(spec => (<tr key={spec} className="border-b"><td className="border p-2">{spec}</td><td className="border p-2">{estMachineStats[spec] || 0}</td><td className="border p-2 text-red-600 font-bold">{(actMachineStats[spec] || 0).toFixed(1)}</td></tr>))}</tbody>
+                            </table>
                             <div className="w-72 h-72 no-print"><canvas ref={pieRef}></canvas></div>
                         </div>
                     </div>
@@ -255,44 +316,59 @@ function App() {
             {/* Modal: 登打實際紀錄 */}
             {modalType === "entry" && (
                 <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
-                    <div className="bg-white p-8 rounded-2xl w-full max-w-2xl border-t-8 border-green-600 shadow-2xl overflow-y-auto max-h-[90vh]">
-                        <h3 className="font-black text-3xl mb-6 text-green-700">📝 登打實際紀錄</h3>
-                        <div className="grid grid-cols-2 gap-6 mb-6">
-                            <div><label className="font-bold">日期:</label><input type="date" className="border-2 p-3 w-full" value={entryForm.date} onChange={e=>setEntryForm({...entryForm, date:e.target.value})}/></div>
+                    <div className="bg-white p-8 rounded-2xl w-full max-w-2xl border-t-8 border-green-600 shadow-2xl overflow-y-auto max-h-[95vh]">
+                        <h3 className="font-black text-3xl mb-6 text-green-700">📝 實際執行紀錄</h3>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+                            <div><label className="font-bold text-xl">1. 日期:</label><input type="date" className="border-2 p-3 w-full rounded bg-gray-50" value={entryForm.date} onChange={e=>setEntryForm({...entryForm, date:e.target.value})}/></div>
                             <div className="grid grid-cols-2 gap-4">
-                                <div><label className="font-bold text-blue-800">外包:</label><input type="number" className="border-2 p-3 w-full" value={entryForm.labor} onChange={e=>setEntryForm({...entryForm, labor:e.target.value})}/></div>
-                                <div><label className="font-bold text-orange-600">何鑫:</label><input type="number" className="border-2 p-3 w-full" value={entryForm.support} onChange={e=>setEntryForm({...entryForm, support:e.target.value})}/></div>
+                                <div><label className="font-bold text-xl text-blue-800">2. 外包:</label><input type="number" className="border-2 p-3 w-full rounded font-black text-2xl bg-blue-50 text-center" value={entryForm.labor} onChange={e=>setEntryForm({...entryForm, labor:e.target.value})}/></div>
+                                <div><label className="font-bold text-xl text-orange-600">3. 何鑫:</label><input type="number" className="border-2 p-3 w-full rounded font-black text-2xl bg-orange-50 text-center" value={entryForm.support} onChange={e=>setEntryForm({...entryForm, support:e.target.value})}/></div>
                             </div>
                         </div>
-                        <div className="mb-6 bg-gray-50 p-4 rounded-xl border">
-                            <label className="font-black text-xl block mb-3">使用機具:</label>
+                        <div className="mb-6 bg-gray-50 p-4 rounded-xl border border-gray-200 shadow-inner">
+                            <label className="font-black text-xl block mb-3 border-b">4. 使用機具/吊車:</label>
                             {entryForm.machines.map((m, idx) => (
-                                <div key={idx} className="flex gap-2 mb-3">
-                                    <select className="border-2 p-2 flex-1 font-bold" value={m.spec} onChange={e=>{const newM=entryForm.machines.map((x,i)=>i===idx?{...x,spec:e.target.value}:x);setEntryForm({...entryForm,machines:newM})}}>
+                                <div key={idx} className="flex gap-2 mb-3 items-center">
+                                    <select className="border-2 p-2 rounded flex-1 bg-white font-bold" value={m.spec} onChange={e=>{const newM=entryForm.machines.map((x,i)=>i===idx?{...x,spec:e.target.value}:x);setEntryForm({...entryForm,machines:newM})}}>
                                         {sortMachines(machineOptions).map(opt=><option key={opt} value={opt}>{opt}</option>)}
                                     </select>
-                                    <input type="number" className="border-2 p-2 w-20 text-center font-black" value={m.hr} onChange={e=>{const newM=entryForm.machines.map((x,i)=>i===idx?{...x,hr:e.target.value}:x);setEntryForm({...entryForm,machines:newM})}}/>
-                                    <button onClick={()=>setEntryForm({...entryForm,machines:entryForm.machines.filter((_,i)=>i!==idx)})}>✕</button>
+                                    <input type="number" className="border-2 p-2 w-20 rounded text-center font-black" value={m.hr} onChange={e=>{const newM=entryForm.machines.map((x,i)=>i===idx?{...x,hr:e.target.value}:x);setEntryForm({...entryForm,machines:newM})}}/>
+                                    <span className="font-bold text-gray-500">hr</span>
+                                    <button className="text-red-500 font-bold text-2xl px-2" onClick={()=>setEntryForm({...entryForm,machines:entryForm.machines.filter((_,i)=>i!==idx)})}>✕</button>
                                 </div>
                             ))}
-                            <button className="text-blue-600 font-black" onClick={()=>setEntryForm({...entryForm, machines: [...entryForm.machines, {spec: machineOptions[0], hr: 8}]})}>+ 新增機具</button>
+                            <button className="text-blue-600 font-black text-lg hover:underline mt-2" onClick={()=>setEntryForm({...entryForm, machines: [...entryForm.machines, {spec: sortMachines(machineOptions)[0], hr: 8}]})}>+ 新增機具</button>
                         </div>
-                        <textarea className="border-2 p-3 w-full h-32 mb-6 shadow-inner" placeholder="紀錄狀況..." value={entryForm.note} onChange={e=>setEntryForm({...entryForm, note:e.target.value})}/>
+                        <label className="font-bold text-xl block mb-2">5. 現場狀況記事:</label>
+                        <textarea className="border-2 p-3 w-full rounded h-32 mb-6 text-lg shadow-inner" placeholder="請紀錄今日狀況..." value={entryForm.note} onChange={e=>setEntryForm({...entryForm, note:e.target.value})}/>
                         <div className="flex gap-4">
                             <button className="bg-green-700 text-white flex-1 py-5 rounded-2xl font-black text-2xl shadow-xl hover:bg-green-800" onClick={() => {
+                                if(!entryForm.date) return alert("請選擇日期");
                                 const nr = [...records, { projectId: currentProjectId, company: currentCompany, date: entryForm.date, id: Date.now(), type: "labor", labor: Number(entryForm.labor), support: Number(entryForm.support), note: entryForm.note }];
                                 entryForm.machines.forEach(m => { nr.push({ projectId: currentProjectId, company: currentCompany, date: entryForm.date, id: Date.now() + Math.random(), type: "crane", spec: m.spec, hr: Number(m.hr) }); });
                                 setRecords(nr);
                                 setModalType("");
-                                setTimeout(() => syncToCloud({ company: currentCompany, projectName: currentProject?.name, records: nr.filter(r => r.projectId === currentProjectId) }), 500);
+                                setTimeout(() => syncToCloud({ company: currentCompany, projectName: currentProject?.name, records: nr.filter(r => r.projectId === currentProjectId), plans: projectPlans[currentProjectId] || [] }), 500);
                             }}>儲存並同步雲端</button>
-                            <button className="bg-gray-200 text-gray-700 px-8 rounded-2xl font-bold" onClick={()=>setModalType("")}>取消</button>
+                            <button className="bg-gray-200 text-gray-700 px-8 rounded-2xl font-bold text-xl" onClick={()=>setModalType("")}>取消</button>
                         </div>
                     </div>
                 </div>
             )}
 
-            {/* 其他 Modal: 機具管理保持不變... */}
+            {/* Modal: 機具管理 */}
+            {modalType === "manageMachines" && (
+                <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+                    <div className="bg-white p-6 rounded-xl w-full max-w-md shadow-2xl">
+                        <h3 className="font-black text-2xl mb-4 border-b pb-2">⚙️ 機具庫管理</h3>
+                        <div className="space-y-2 mb-4 max-h-60 overflow-y-auto font-bold">
+                            {machineOptions.map(m => <div key={m} className="flex justify-between border p-2 rounded items-center"><span>{m}</span><button className="text-red-500 text-xl px-2" onClick={()=>{if(confirm(`刪除: ${m}？`)){const nl=machineOptions.filter(x=>x!==m);setMachineOptions(nl);syncToCloud({equipments:nl})}}}>✕</button></div>)}
+                        </div>
+                        <button className="bg-blue-600 text-white w-full py-2 rounded font-bold" onClick={()=>{const n=prompt("新增機具名稱"); if(n){const nl=sortMachines([...machineOptions,n]);setMachineOptions(nl);syncToCloud({equipments:nl})}}}>+ 新增機具</button>
+                        <button className="w-full mt-4 text-gray-500 font-bold" onClick={()=>setModalType("")}>關閉</button>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }
