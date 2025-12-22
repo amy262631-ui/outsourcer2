@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="zh-TW"><head>    <meta charset="UTF-8" />    <meta name="viewport" content="width=device-width, initial-scale=1.0" />    <title>工程執行分析對照系統</title>
+<!DOCTYPE html><html lang="zh-TW"><head>    <meta charset="UTF-8" />    <meta name="viewport" content="width=device-width, initial-scale=1.0" />    <title>工程工數吊車分析對照系統</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/react@18/umd/react.development.js"></script>    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -40,6 +40,37 @@ function App() {
     const [modalType, setModalType] = React.useState("");
     const [entryForm, setEntryForm] = React.useState({ date: new Date().toISOString().split('T')[0], labor: 0, support: 0, note: "", machines: [] });
 
+    /* === 在這裡貼上 Google Sheets 連線邏輯 === */
+    const GAS_URL = "https://script.google.com/macros/s/AKfycbzc7eXQObf5fkZ4iqje4_I4U3avG9fveDJe3UumMuaH5v0uSo8M75w_e_IbdRiuHtqPSg/exec";
+
+    // 同步到雲端
+    const syncToGoogleSheets = async () => {
+        if (!currentProjectId) return alert("請先選擇工程");
+        // 整理要上傳的資料
+        const payload = {
+            action: "sync",
+            projectName: currentProject?.name,
+            company: currentCompany,
+            records: records.filter(r => r.projectId === currentProjectId),
+            plans: projectPlans[currentProjectId] || []
+        };
+
+        try {
+            await fetch(GAS_URL, {
+                method: "POST",
+                mode: "no-cors",
+                body: JSON.stringify(payload)
+            });
+            alert("同步指令已送出（雲端作業約需數秒）");
+        } catch (e) {
+            alert("連線失敗");
+        }
+    };
+
+    // 從雲端讀取 (如果需要的話)
+    const loadFromCloud = async () => {
+        // 讀取邏輯...
+    };
     React.useEffect(() => {
         save("projects", projects); save("currentProjectId", currentProjectId);
         save("companies", companies); save("currentCompany", currentCompany);
@@ -209,6 +240,7 @@ const exportToWord = () => {
                     <button className="bg-slate-700 text-white px-4 py-2 rounded font-bold" onClick={()=>setModalType("manageMachines")}>⚙️ 機具庫</button>
                     <button className="bg-green-700 text-white px-4 py-2 rounded font-bold" onClick={exportToExcel}>📊 匯出 Excel</button>
                     <button className="bg-blue-800 text-white px-4 py-2 rounded font-bold" onClick={exportToWord}>📝 匯出 Word</button>
+                    <button className="bg-cyan-600 text-white px-4 py-2 rounded font-bold mr-2" onClick={syncToGoogleSheets}>☁️ 同步雲端</button>
                     <button className="bg-gray-800 text-white px-6 py-2 rounded font-bold ml-auto" onClick={()=>window.print()}>🖨️ 列印分析報表</button>
                 </div>
             </div>
