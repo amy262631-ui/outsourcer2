@@ -45,32 +45,28 @@ function App() {
         if (!currentProjectId) return alert("請先選擇工程再進行同步");
         
         const GAS_URL = "https://script.google.com/macros/s/AKfycbzc7eXQObf5fkZ4iqje4_I4U3avG9fveDJe3UumMuaH5v0uSo8M75w_e_IbdRiuHtqPSg/exec";
-
-        // 打包所有維度的資料
-        const payload = {
-            company: currentCompany,
-            projectName: currentProject?.name,
-            // 1. 機具清單 (從您的 equipment 狀態抓取)
-            equipments: equipments || [], 
-            // 2. 該工程的預估規劃
-            plans: projectPlans[currentProjectId] || [],
-            // 3. 該工程的實際紀錄
-            records: records.filter(r => r.projectId === currentProjectId)
-        };
-
-        try {
-            await fetch(GAS_URL, {
-                method: "POST",
-                mode: "no-cors", // 解決跨網域問題
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(payload)
-            });
-            alert("☁️ 機具、預估、實際資料已完整同步至雲端！");
-        } catch (error) {
-            console.error("同步失敗:", error);
-            alert("同步失敗，請檢查網路連線");
-        }
+const payload = {
+        company: currentCompany,
+        projectName: currentProject?.name,
+        // 修正處：將原本錯誤的 equipments 改為您的變數 machineOptions
+        equipments: machineOptions || [], 
+        plans: projectPlans[currentProjectId] || [],
+        records: records.filter(r => r.projectId === currentProjectId)
     };
+
+    try {
+        await fetch(GAS_URL, {
+            method: "POST",
+            mode: "no-cors",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload)
+        });
+        alert("☁️ 資料已成功同步至雲端（包含機具、預估、實際紀錄）！");
+    } catch (error) {
+        console.error("同步失敗:", error);
+        alert("同步失敗，請檢查網路連線");
+    }
+};
     React.useEffect(() => {
         save("projects", projects); save("currentProjectId", currentProjectId);
         save("companies", companies); save("currentCompany", currentCompany);
