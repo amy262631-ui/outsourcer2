@@ -39,7 +39,14 @@ function App() {
     const [projectStatus, setProjectStatus] = React.useState(load("projectStatus", {}));
     /* --- 搜尋關鍵字：const [modalType, setModalType] --- */
     const [modalType, setModalType] = React.useState("");
-
+// --- 補上這一段定義 ---
+    const [entryForm, setEntryForm] = React.useState({ 
+        date: new Date().toISOString().split('T')[0], 
+        labor: 0, 
+        support: 0, 
+        note: "",
+        machines: [] // 用來儲存當天使用的多筆機具
+    });
     // 這裡是同步備份的函式定義
     const syncToCloudBackup = async () => {
         if (!currentProjectId) return alert("請先選擇工程再進行同步");
