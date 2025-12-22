@@ -456,14 +456,32 @@ const exportToWord = () => {
                         <label className="font-bold text-xl block mb-2">5. 現場狀況記事:</label>
                         <textarea className="border-2 p-3 w-full rounded h-32 mb-6 text-lg shadow-inner" placeholder="請紀錄今日狀況..." value={entryForm.note} onChange={e=>setEntryForm({...entryForm, note:e.target.value})}/>
                         <div className="flex gap-4">
-                            <button className="bg-green-700 text-white flex-1 py-5 rounded-2xl font-black text-2xl shadow-xl hover:bg-green-800" onClick={()=>{
-                                if(!entryForm.date) return alert("請選擇日期");
-                                const baseRecord = { projectId: currentProjectId, company: currentCompany, date: entryForm.date, id: Date.now() };
-                                const newRecords = [...records, { ...baseRecord, type: "labor", labor: Number(entryForm.labor), support: Number(entryForm.support), note: entryForm.note }];
-                                entryForm.machines.forEach(m => { newRecords.push({ ...baseRecord, id: Date.now() + Math.random(), type: "crane", spec: m.spec, hr: Number(m.hr) }); });
-                                setRecords(newRecords);
-                                setModalType("");
-                            }}>儲存執行紀錄</button>
+                            <button className="bg-green-700 text-white flex-1 py-5 rounded-2xl font-black text-2xl shadow-xl hover:bg-green-800" onClick={() => {
+    if(!entryForm.date) return alert("請選擇日期");
+    
+    // 1. 準備本地資料
+    const baseRecord = { projectId: currentProjectId, company: currentCompany, date: entryForm.date, id: Date.now() };
+    const newRecords = [...records, { ...baseRecord, type: "labor", labor: Number(entryForm.labor), support: Number(entryForm.support), note: entryForm.note }];
+    entryForm.machines.forEach(m => { 
+        newRecords.push({ ...baseRecord, id: Date.now() + Math.random(), type: "crane", spec: m.spec, hr: Number(m.hr) }); 
+    });
+    
+    // 2. 存入本地並關閉視窗
+    setRecords(newRecords);
+    setModalType("");
+
+    // 3. 【新增：自動同步雲端】
+    // 使用 setTimeout 延遲 500 毫秒，確保資料已完成更新再進行同步
+    setTimeout(() => {
+        if (typeof syncToCloudBackup === 'function') {
+            syncToCloudBackup();
+        } else {
+            console.error("找不到 syncToCloudBackup 函式，請確認是否有正確定義。");
+        }
+    }, 500);
+}}>
+    儲存並自動同步雲端
+</button>
                             <button className="bg-gray-200 text-gray-700 px-8 rounded-2xl font-bold text-xl" onClick={()=>setModalType("")}>取消</button>
                         </div>
                     </div>
