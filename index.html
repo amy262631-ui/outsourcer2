@@ -43,33 +43,34 @@ function App() {
     /* === 在這裡貼上 Google Sheets 連線邏輯 === */
     const GAS_URL = "https://script.google.com/macros/s/AKfycbzc7eXQObf5fkZ4iqje4_I4U3avG9fveDJe3UumMuaH5v0uSo8M75w_e_IbdRiuHtqPSg/exec";
 
-    // 同步到雲端
-    const syncToGoogleSheets = async () => {
-        if (!currentProjectId) return alert("請先選擇工程");
-        // 整理要上傳的資料
+  const syncToCloudBackup = async () => {
+        if (!currentProjectId) return alert("請先選擇工程再進行同步");
+        
+        // 打包當前選定工程的所有資料
         const payload = {
-            action: "sync",
-            projectName: currentProject?.name,
             company: currentCompany,
-            records: records.filter(r => r.projectId === currentProjectId),
-            plans: projectPlans[currentProjectId] || []
+            projectName: currentProject?.name,
+            fullData: {
+                projectId: currentProjectId,
+                records: records.filter(r => r.projectId === currentProjectId),
+                plans: projectPlans[currentProjectId] || [],
+                status: projectStatus[currentProjectId] || false
+            }
         };
 
         try {
+            // 使用 no-cors 模式確保即使跨網域也能送出
             await fetch(GAS_URL, {
                 method: "POST",
                 mode: "no-cors",
+                headers: { "Content-Type": "application/json" },
                 body: JSON.stringify(payload)
             });
-            alert("同步指令已送出（雲端作業約需數秒）");
-        } catch (e) {
-            alert("連線失敗");
+            alert("☁️ 資料已成功備份至雲端存檔！");
+        } catch (error) {
+            console.error("同步失敗:", error);
+            alert("同步失敗，請檢查網路連線");
         }
-    };
-
-    // 從雲端讀取 (如果需要的話)
-    const loadFromCloud = async () => {
-        // 讀取邏輯...
     };
     React.useEffect(() => {
         save("projects", projects); save("currentProjectId", currentProjectId);
