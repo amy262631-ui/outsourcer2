@@ -44,29 +44,31 @@ function App() {
     const syncToCloudBackup = async () => {
         if (!currentProjectId) return alert("請先選擇工程再進行同步");
         
-        const GAS_URL = "https://script.google.com/macros/s/AKfycbzc7eXQObf5fkZ4iqje4_I4U3avG9fveDJe3UumMuaH5v0uSo8M75w_e_IbdRiuHtqPSg/exec"; // <--- 記得填入網址
+        const GAS_URL = "https://script.google.com/macros/s/AKfycbzc7eXQObf5fkZ4iqje4_I4U3avG9fveDJe3UumMuaH5v0uSo8M75w_e_IbdRiuHtqPSg/exec";
 
+        // 打包所有維度的資料
         const payload = {
             company: currentCompany,
             projectName: currentProject?.name,
-            fullData: {
-                projectId: currentProjectId,
-                records: records.filter(r => r.projectId === currentProjectId),
-                plans: projectPlans[currentProjectId] || [],
-                status: projectStatus[currentProjectId] || false
-            }
+            // 1. 機具清單 (從您的 equipment 狀態抓取)
+            equipments: equipments || [], 
+            // 2. 該工程的預估規劃
+            plans: projectPlans[currentProjectId] || [],
+            // 3. 該工程的實際紀錄
+            records: records.filter(r => r.projectId === currentProjectId)
         };
 
         try {
             await fetch(GAS_URL, {
                 method: "POST",
-                mode: "no-cors",
+                mode: "no-cors", // 解決跨網域問題
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify(payload)
             });
-            alert("☁️ 資料已成功備份至雲端存檔！");
+            alert("☁️ 機具、預估、實際資料已完整同步至雲端！");
         } catch (error) {
-            alert("同步失敗，請檢查網路");
+            console.error("同步失敗:", error);
+            alert("同步失敗，請檢查網路連線");
         }
     };
     React.useEffect(() => {
