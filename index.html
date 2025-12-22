@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>雲端-現場工程工數吊車分析對照系統</title>
+    <title>雲端工數吊車分析系統</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
@@ -16,14 +16,7 @@
         input, select, textarea { font-size: 20px !important; }
         .table-header-darkblue { background-color: #1e3a8a !important; color: white !important; }
         .actual-detail-table td { font-size: 22px !important; }
-        .actual-detail-table .font-black { font-size: 26px !important; }
-        @media print { 
-            .no-print { display: none !important; } 
-            body { background: white !important; padding: 0; margin: 0; }
-            .bg-white { box-shadow: none !important; border: none !important; margin-bottom: 0 !important; }
-            .print-section { break-after: page; padding: 20px !important; width: 100% !important; }
-            table td, table th { padding: 4px 8px !important; font-size: 14px !important; border: 1px solid #333 !important; }
-        }
+        @media print { .no-print { display: none !important; } .print-section { break-after: page; } }
     </style>
 </head>
 <body class="bg-gray-100 min-h-screen p-4 md:p-8">
@@ -32,7 +25,7 @@
 
 const load = (k, f) => { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : f; } catch { return f; } };
 const save = (k, v) => localStorage.setItem(k, JSON.stringify(v));
-const sortMachines = (list) => [...list].sort((a,b) => (parseInt(a.match(/\d+/))||0) - (parseInt(b.match(/\d+/))||0));
+const sortMachines = (list) => [...new Set(list)].sort((a,b) => (parseInt(a.match(/\d+/))||0) - (parseInt(b.match(/\d+/))||0));
 
 function App() {
     const [projects, setProjects] = React.useState(load("projects", []));
@@ -53,124 +46,91 @@ function App() {
     const currentPlans = projectPlans[currentProjectId] || [];
     const isCompleted = projectStatus[currentProjectId] || false;
 
+    // --- 同步邏輯 ---
+    const downloadFromCloud = async () => {
+        setSyncStatus(prev => ({ ...prev, loading: true }));
+        try {
+            const response = await fetch(GAS_URL);
+            const cloud = await response.json();
+            if (cloud.projects) setProjects(cloud.projects.map(p => ({ id: String(p["工程ID"]), name: p["工程名稱"] })));
+            if (cloud.equipments) setMachineOptions(sortMachines(cloud.equipments.map(e => e["機具名稱"])));
+            if (cloud.plans) {
+                const map = {};
+                cloud.plans.forEach(p => {
+                    const pId = projects.find(proj => proj.name === p["工程名稱"])?.id || p["工程名稱"];
+                    if (!map[pId]) map[pId] = [];
+                    map[pId].push({ id: Math.random(), task: p["預計工作內容"], labor: p["外包"], support: p["何鑫"], machines: JSON.parse(p["機具組合"] || "[]") });
+                });
+                setProjectPlans(map);
+            }
+            const time = new Date().toLocaleTimeString();
+            setSyncStatus({ loading: false, lastTime: time });
+            save("lastSyncTime", time);
+            alert("📥 雲端資料同步成功！");
+        } catch (e) { setSyncStatus(prev => ({ ...prev, loading: false })); }
+    };
+
+    const syncToCloud = async (customPayload = null) => {
+        if (!currentProjectId && !customPayload) return;
+        setSyncStatus(prev => ({ ...prev, loading: true }));
+        const payload = customPayload || {
+            company: currentCompany,
+            projectName: currentProject?.name,
+            equipments: machineOptions, 
+            plans: currentPlans,
+            records: records.filter(r => r.projectId === currentProjectId),
+            projects: projects,
+            projectStatus: projectStatus // 同步結案狀態
+        };
+        try {
+            await fetch(GAS_URL, { method: "POST", mode: "no-cors", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+            setSyncStatus({ loading: false, lastTime: new Date().toLocaleTimeString() });
+        } catch (e) { setSyncStatus(prev => ({ ...prev, loading: false })); }
+    };
+
+    // --- 匯出功能 ---
+    const exportToExcel = () => {
+        if (!currentProject) return alert("請先選擇工程");
+        const wb = XLSX.utils.book_new();
+        const pData = [["天序", "預計內容", "外包", "何鑫", "機具"]];
+        currentPlans.forEach((p, i) => pData.push([i+1, p.task, p.labor, p.support, (p.machines||[]).map(m=>`${m.spec}x${m.qty}`).join(', ')]));
+        XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(pData), "預估規劃");
+        const aData = [["日期", "外包", "何鑫", "機具", "備註"]];
+        Object.entries(dailyDetails).forEach(([date, d]) => aData.push([date, d.labor, d.support, d.machines.join(','), d.notes.join('/')]));
+        XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(aData), "實際執行");
+        XLSX.writeFile(wb, `${currentProject.name}-報表.xlsx`);
+    };
+
+    const exportToWord = () => {
+        const clone = document.getElementById('export-area').cloneNode(true);
+        clone.querySelectorAll('select').forEach(el => el.parentNode.replaceChild(document.createTextNode(el.options[el.selectedIndex]?.text || ""), el));
+        clone.querySelectorAll('input, textarea').forEach(el => el.parentNode.replaceChild(document.createTextNode(el.value || ""), el));
+        clone.querySelectorAll('.no-print').forEach(el => el.remove());
+        const header = `<html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'><head><meta charset='utf-8'><style>table{border-collapse:collapse;width:100%;} th,td{border:1px solid black;padding:5px;}</style></head><body>${clone.innerHTML}</body></html>`;
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(new Blob(['\ufeff', header], { type: 'application/msword' }));
+        link.download = `${currentProject?.name}-報表.doc`;
+        link.click();
+    };
+
     // --- 計算邏輯 ---
     const projectRecords = records.filter(r => r.projectId === currentProjectId && r.company === currentCompany);
     const dailyDetails = {};
     projectRecords.forEach(r => {
         if (!dailyDetails[r.date]) dailyDetails[r.date] = { labor: 0, support: 0, machines: [], notes: [], raw: [] };
         dailyDetails[r.date].raw.push(r);
-        if (r.type === "labor") {
-            dailyDetails[r.date].labor += Number(r.labor || 0);
-            dailyDetails[r.date].support += Number(r.support || 0);
-            if (r.note) dailyDetails[r.date].notes.push(r.note);
-        } else {
-            dailyDetails[r.date].machines.push(`${r.spec}(${(Number(r.hr)/8).toFixed(1)}台)`);
-        }
+        if (r.type === "labor") { dailyDetails[r.date].labor += Number(r.labor); dailyDetails[r.date].support += Number(r.support); if (r.note) dailyDetails[r.date].notes.push(r.note); }
+        else { dailyDetails[r.date].machines.push(`${r.spec}(${(Number(r.hr)/8).toFixed(1)}台)`); }
     });
+    const estTotalSum = currentPlans.reduce((s, p) => s + Number(p.labor) + Number(p.support), 0);
+    const actTotalSum = Object.values(dailyDetails).reduce((s, d) => s + d.labor + d.support, 0);
 
-    const estTotalLabor = currentPlans.reduce((s, p) => s + (Number(p.labor) || 0), 0);
-    const estTotalSupport = currentPlans.reduce((s, p) => s + (Number(p.support) || 0), 0);
-    const estTotalSum = estTotalLabor + estTotalSupport;
-    const actTotalLabor = Object.values(dailyDetails).reduce((s, d) => s + d.labor, 0);
-    const actTotalSupport = Object.values(dailyDetails).reduce((s, d) => s + d.support, 0);
-    const actTotalSum = actTotalLabor + actTotalSupport;
-    const laborVariance = actTotalSum - estTotalSum;
-    const variancePercent = estTotalSum > 0 ? ((laborVariance / estTotalSum) * 100).toFixed(1) : 0;
-
-    const estMachineStats = {};
-    currentPlans.forEach(p => (p.machines || []).forEach(m => { estMachineStats[m.spec] = (estMachineStats[m.spec] || 0) + Number(m.qty); }));
-    const actMachineStats = {};
-    projectRecords.filter(r => r.type === "crane").forEach(r => { actMachineStats[r.spec] = (actMachineStats[r.spec] || 0) + (Number(r.hr) / 8); });
-
-    // --- 同步核心 ---
-    const downloadFromCloud = async () => {
-        setSyncStatus(prev => ({ ...prev, loading: true }));
-        try {
-            const response = await fetch(GAS_URL);
-            const cloudData = await response.json();
-            if (cloudData.projects) setProjects(cloudData.projects.map(p => ({ id: String(p["工程ID"]), name: p["工程名稱"] })));
-            if (cloudData.equipments) setMachineOptions(cloudData.equipments.map(e => e["機具名稱"]));
-            
-            if (cloudData.plans) {
-                const newPlansMap = {};
-                cloudData.plans.forEach(p => {
-                    const matchedProj = projects.find(proj => proj.name === p["工程名稱"]);
-                    const pId = matchedProj ? matchedProj.id : p["工程名稱"];
-                    if (!newPlansMap[pId]) newPlansMap[pId] = [];
-                    newPlansMap[pId].push({ id: Math.random(), task: p["預計工作內容"], labor: p["外包"], support: p["何鑫"], machines: JSON.parse(p["機具組合"] || "[]") });
-                });
-                setProjectPlans(newPlansMap);
-            }
-            
-            const time = new Date().toLocaleTimeString();
-            setSyncStatus({ loading: false, lastTime: time });
-            save("lastSyncTime", time);
-            alert("📥 雲端資料同步成功！");
-        } catch (error) {
-            alert("同步失敗，請確認 GAS 是否已部署為所有人可存取");
-            setSyncStatus(prev => ({ ...prev, loading: false }));
-        }
-    };
-
-    const syncToCloud = async (customPayload = null) => {
-        if (!currentProjectId) return;
-        setSyncStatus(prev => ({ ...prev, loading: true }));
-        const payload = customPayload || {
-            company: currentCompany,
-            projectName: currentProject?.name,
-            equipments: machineOptions, 
-            plans: projectPlans[currentProjectId] || [],
-            records: records.filter(r => r.projectId === currentProjectId),
-            projects: projects
-        };
-        try {
-            await fetch(GAS_URL, { method: "POST", mode: "no-cors", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
-            const time = new Date().toLocaleTimeString();
-            setSyncStatus({ loading: false, lastTime: time });
-            save("lastSyncTime", time);
-        } catch (error) { setSyncStatus(prev => ({ ...prev, loading: false })); }
-    };
-
-    // --- 修正後的 📊 匯出 Excel ---
-    const exportToExcel = () => {
-        if (!currentProject) return alert("請選擇工程");
-        const wb = XLSX.utils.book_new();
-        // 頁籤 1: 預估
-        const planData = [["天序", "預計內容", "外包", "何鑫", "機具"]];
-        currentPlans.forEach((p, i) => planData.push([i+1, p.task, p.labor, p.support, (p.machines||[]).map(m=>`${m.spec}x${m.qty}`).join(', ')]));
-        XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(planData), "預估規劃");
-        // 頁籤 2: 實際 (修正數據抓取)
-        const actualData = [["日期", "外包", "何鑫", "實際機具", "狀況記事"]];
-        Object.entries(dailyDetails).sort((a,b)=>a[0].localeCompare(b[0])).forEach(([date, data]) => {
-            actualData.push([date, data.labor, data.support, data.machines.join(', '), data.notes.join(' / ')]);
-        });
-        XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(actualData), "實際執行");
-        XLSX.writeFile(wb, `${currentProject.name}-分析表.xlsx`);
-    };
-
-    // --- 修正後的 📝 匯出 Word ---
-    const exportToWord = () => {
-        if (!currentProject) return alert("請選擇工程");
-        const clone = document.getElementById('export-area').cloneNode(true);
-        // 轉純文字處理，防止 Word 格式崩潰
-        clone.querySelectorAll('select').forEach(el => { el.parentNode.replaceChild(document.createTextNode(el.options[el.selectedIndex]?.text || ""), el); });
-        clone.querySelectorAll('input, textarea').forEach(el => { el.parentNode.replaceChild(document.createTextNode(el.value || ""), el); });
-        clone.querySelectorAll('.no-print').forEach(el => el.remove());
-
-        const header = `<html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'><head><meta charset='utf-8'><style>table{border-collapse:collapse;width:100%;} th,td{border:1px solid black;padding:5px;text-align:center;}</style></head><body>${clone.innerHTML}</body></html>`;
-        const blob = new Blob(['\ufeff', header], { type: 'application/msword' });
-        const link = document.createElement('a');
-        link.href = URL.createObjectURL(blob);
-        link.download = `${currentProject.name}-報表.doc`;
-        link.click();
-    };
-
+    // --- 監聽與持久化 ---
     React.useEffect(() => {
-        save("projects", projects); save("currentProjectId", currentProjectId);
-        save("companies", companies); save("currentCompany", currentCompany);
-        save("records", records); save("projectPlans", projectPlans);
-        save("machineOptions", machineOptions); save("projectStatus", projectStatus);
-    }, [projects, currentProjectId, companies, currentCompany, records, projectPlans, machineOptions, projectStatus]);
+        save("projects", projects); save("records", records); save("projectPlans", projectPlans);
+        save("machineOptions", machineOptions); save("currentProjectId", currentProjectId);
+        save("projectStatus", projectStatus);
+    }, [projects, records, projectPlans, machineOptions, currentProjectId, projectStatus]);
 
     const pieRef = React.useRef(null);
     const chartRef = React.useRef(null);
@@ -184,193 +144,182 @@ function App() {
             plugins: [ChartDataLabels],
             options: { plugins: { datalabels: { color: '#fff', font: { weight: 'bold' }, formatter: (v) => (v*100/actTotalSum).toFixed(1) + "%" }}}
         });
-    }, [actTotalLabor, actTotalSupport, actTotalSum]);
+    }, [actTotalSum]);
 
     return (
         <div className="max-w-7xl mx-auto pb-10">
-            <div className="no-print bg-white p-6 rounded-xl shadow mb-6 border">
-                <div className="flex flex-wrap gap-4 items-center">
-                    <div className="flex items-center gap-2">
-                        <span className={`w-3 h-3 rounded-full ${syncStatus.loading ? 'bg-yellow-400 animate-pulse' : 'bg-green-500'}`}></span>
-                        <span className="text-sm font-bold text-gray-500">{syncStatus.lastTime}</span>
-                    </div>
-                    <select className="border-2 p-2 rounded font-bold" value={currentCompany} onChange={e=>setCurrentCompany(e.target.value)}>
-                        {companies.map(c => <option key={c} value={c}>{c}</option>)}
-                    </select>
-                    <button className="bg-amber-500 text-white px-4 py-2 rounded font-bold" onClick={downloadFromCloud}>🔄 同步最新</button>
-                    <div className="h-8 border-r mx-2"></div>
-                    <select className="border-2 p-2 rounded font-bold text-blue-900" value={currentProjectId} onChange={e=>setCurrentProjectId(e.target.value)}>
-                        <option value="">選擇工程</option>
-                        {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-                    </select>
-                    <button className="bg-blue-600 text-white px-4 py-2 rounded font-bold" onClick={()=>{const m=prompt("工程名稱"); if(m){const nl=[...projects,{id:Date.now().toString(),name:m}];setProjects(nl);setTimeout(()=>syncToCloud({projects:nl}),500)}}}>+ 新增工程</button>
-                    <button className="bg-green-700 text-white px-4 py-2 rounded font-bold" onClick={exportToExcel}>📊 匯出 Excel</button>
-                    <button className="bg-blue-800 text-white px-4 py-2 rounded font-bold" onClick={exportToWord}>📝 匯出 Word</button>
-                    <button className="bg-slate-700 text-white px-4 py-2 rounded font-bold" onClick={()=>setModalType("manageMachines")}>⚙️ 機具庫</button>
-                    <button className="bg-cyan-600 text-white px-4 py-2 rounded font-bold shadow-md" onClick={()=>syncToCloud()}>☁️ 手動備份</button> 
-                    <button className="bg-gray-800 text-white px-6 py-2 rounded font-bold ml-auto" onClick={()=>window.print()}>🖨️ 列印</button>
+            {/* 頂部選單 */}
+            <div className="no-print bg-white p-6 rounded-xl shadow mb-6 border flex flex-wrap gap-4 items-center">
+                <div className="flex items-center gap-2 mr-4 font-bold text-sm">
+                    <span className={`w-3 h-3 rounded-full ${syncStatus.loading ? 'bg-yellow-400 animate-pulse' : 'bg-green-500'}`}></span>
+                    <span>最後同步: {syncStatus.lastTime}</span>
                 </div>
+                <button className="bg-amber-500 text-white px-4 py-2 rounded font-bold shadow-md" onClick={downloadFromCloud}>🔄 同步最新(讀取雲端)</button>
+                <div className="h-8 border-r mx-2"></div>
+                <select className="border-2 p-2 rounded font-bold text-blue-900" value={currentProjectId} onChange={e=>setCurrentProjectId(e.target.value)}>
+                    <option value="">選擇工程</option>
+                    {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                </select>
+                <button className="bg-blue-600 text-white px-4 py-2 rounded font-bold" onClick={()=>{const n=prompt("工程名稱");if(n){const nl=[...projects,{id:Date.now().toString(),name:n}];setProjects(nl);setTimeout(()=>syncToCloud({projects:nl, equipments:machineOptions}),500)}}}>+ 新增工程</button>
+                <button className="bg-green-700 text-white px-4 py-2 rounded font-bold" onClick={exportToExcel}>📊 Excel</button>
+                <button className="bg-blue-800 text-white px-4 py-2 rounded font-bold" onClick={exportToWord}>📝 Word</button>
+                <button className="bg-slate-700 text-white px-4 py-2 rounded font-bold" onClick={()=>setModalType("manageMachines")}>⚙️ 機具庫</button>
+                <button className="bg-gray-800 text-white px-6 py-2 rounded font-bold ml-auto" onClick={()=>window.print()}>🖨️ 列印</button>
             </div>
 
             <div id="export-area">
-                <div className="print-section bg-white p-6 rounded-xl shadow-lg mb-8 border-t-8 border-blue-900">
-                    <h2 className="text-2xl font-black text-blue-900 mb-4">📋 預估規劃 - {currentCompany} - {currentProject?.name}</h2>
+                <div className="bg-white p-6 rounded-xl shadow mb-8 border-t-8 border-blue-900">
+                    <h2 className="text-2xl font-black mb-4">📋 預估規劃 - {currentProject?.name}</h2>
                     <table className="w-full border-collapse">
-                        <thead>
-                            <tr className="table-header-darkblue">
-                                <th className="border p-3 w-16">天序</th>
-                                <th className="border p-3 text-left">內容</th>
-                                <th className="border p-3 w-28 text-blue-100">外包</th>
-                                <th className="border p-3 w-28 text-yellow-100">何鑫</th>
-                                <th className="border p-3">機具組合</th>
-                                <th className="border p-3 w-32 no-print">操作</th>
-                            </tr>
+                        <thead className="table-header-darkblue">
+                            <tr><th className="border p-2">天序</th><th className="border p-2">內容</th><th className="border p-2">外包</th><th className="border p-2">何鑫</th><th className="border p-2">機具組合</th><th className="border p-2 no-print">操作</th></tr>
                         </thead>
                         <tbody>
                             {currentPlans.map((p, i) => (
-                                <tr key={p.id}>
-                                    <td className="border p-2 text-center">{i+1}</td>
-                                    <td className="border p-2"><textarea className="w-full bg-transparent" rows="1" value={p.task} onChange={e=>setProjectPlans({...projectPlans,[currentProjectId]:currentPlans.map(x=>x.id===p.id?{...x,task:e.target.value}:x)})} onBlur={()=>syncToCloud()}/></td>
-                                    <td className="border p-2"><input type="number" className="w-full text-center text-blue-700 font-bold" value={p.labor} onChange={e=>setProjectPlans({...projectPlans,[currentProjectId]:currentPlans.map(x=>x.id===p.id?{...x,labor:e.target.value}:x)})} onBlur={()=>syncToCloud()}/></td>
-                                    <td className="border p-2"><input type="number" className="w-full text-center text-yellow-600 font-bold" value={p.support} onChange={e=>setProjectPlans({...projectPlans,[currentProjectId]:currentPlans.map(x=>x.id===p.id?{...x,support:e.target.value}:x)})} onBlur={()=>syncToCloud()}/></td>
+                                <tr key={p.id} className="text-center">
+                                    <td className="border p-2 font-bold">{i+1}</td>
+                                    <td className="border p-2"><textarea className="w-full" rows="1" value={p.task} onChange={e=>setProjectPlans({...projectPlans,[currentProjectId]:currentPlans.map(x=>x.id===p.id?{...x,task:e.target.value}:x)})} onBlur={()=>syncToCloud()}/></td>
+                                    <td className="border p-2"><input type="number" className="w-full text-center" value={p.labor} onChange={e=>setProjectPlans({...projectPlans,[currentProjectId]:currentPlans.map(x=>x.id===p.id?{...x,labor:e.target.value}:x)})} onBlur={()=>syncToCloud()}/></td>
+                                    <td className="border p-2"><input type="number" className="w-full text-center" value={p.support} onChange={e=>setProjectPlans({...projectPlans,[currentProjectId]:currentPlans.map(x=>x.id===p.id?{...x,support:e.target.value}:x)})} onBlur={()=>syncToCloud()}/></td>
                                     <td className="border p-2">
-                                        {(p.machines || []).map((m, mi) => (
-                                            <div key={mi} className="flex gap-1 mb-1 items-center bg-gray-100 p-1 rounded no-print">
-                                                <select className="text-xs border" value={m.spec} onChange={e=>{const nm=p.machines.map((v,idx)=>idx===mi?{...v,spec:e.target.value}:v);setProjectPlans({...projectPlans,[currentProjectId]:currentPlans.map(x=>x.id===p.id?{...x,machines:nm}:x)});syncToCloud();}}>
-                                                    {sortMachines(machineOptions).map(opt=><option key={opt} value={opt}>{opt}</option>)}
-                                                </select>
-                                                <input type="number" className="w-10 text-xs text-center" value={m.qty} onChange={e=>{const nm=p.machines.map((v,idx)=>idx===mi?{...v,qty:e.target.value}:v);setProjectPlans({...projectPlans,[currentProjectId]:currentPlans.map(x=>x.id===p.id?{...x,machines:nm}:x)})}} onBlur={()=>syncToCloud()}/>
-                                                <button className="text-red-500 px-1" onClick={()=>{const nm=p.machines.filter((_,idx)=>idx!==mi);setProjectPlans({...projectPlans,[currentProjectId]:currentPlans.map(x=>x.id===p.id?{...x,machines:nm}:x)});syncToCloud();}}>✕</button>
-                                            </div>
-                                        ))}
-                                        <button className="text-xs text-blue-600 no-print" onClick={()=>{const nm=[...(p.machines||[]),{spec:machineOptions[0],qty:1}];setProjectPlans({...projectPlans,[currentProjectId]:currentPlans.map(x=>x.id===p.id?{...x,machines:nm}:x)})}}>+ 機具</button>
+                                        {(p.machines || []).map((m, mi) => <div key={mi} className="text-sm">{m.spec}x{m.qty} <button className="no-print text-red-500" onClick={()=>{const nm=p.machines.filter((_,idx)=>idx!==mi);setProjectPlans({...projectPlans,[currentProjectId]:currentPlans.map(x=>x.id===p.id?{...x,machines:nm}:x)});syncToCloud();}}>✕</button></div>)}
+                                        <button className="text-xs text-blue-600 no-print" onClick={()=>{const nm=[...(p.machines||[]),{spec:machineOptions[0],qty:1}];setProjectPlans({...projectPlans,[currentProjectId]:currentPlans.map(x=>x.id===p.id?{...x,machines:nm}:x)})}}>+機具</button>
                                     </td>
-                                    <td className="border p-2 text-center no-print">
-                                        <button className="text-red-500 font-bold" onClick={()=>{if(confirm("確定刪除此天預估？")){setProjectPlans({...projectPlans,[currentProjectId]:currentPlans.filter(x=>x.id!==p.id)});syncToCloud();}}}>刪除</button>
-                                    </td>
+                                    <td className="border p-2 no-print"><button className="text-red-500 font-bold" onClick={()=>{setProjectPlans({...projectPlans,[currentProjectId]:currentPlans.filter(x=>x.id!==p.id)});syncToCloud();}}>刪除</button></td>
                                 </tr>
                             ))}
                         </tbody>
-                        <tfoot className="bg-blue-900 text-white font-black text-lg">
-                            <tr><td colSpan="2" className="border p-2 text-right">預計合計：</td><td className="border p-2 text-center">{estTotalLabor}</td><td className="border p-2 text-center">{estTotalSupport}</td><td colSpan="2" className="border p-2 text-center">共 {estTotalSum} 工</td></tr>
-                        </tfoot>
                     </table>
-                    <button className="no-print mt-4 bg-blue-100 p-2 rounded font-bold" onClick={()=>{setProjectPlans({...projectPlans,[currentProjectId]:[...currentPlans,{id:Date.now(),task:"",labor:0,support:0,machines:[]}]});}}>+ 新增預估天序</button>
+                    <button className="no-print mt-4 bg-blue-100 p-2 rounded font-bold" onClick={()=>setProjectPlans({...projectPlans,[currentProjectId]:[...currentPlans,{id:Date.now(),task:"",labor:0,support:0,machines:[]}]})}>+ 新增預估天序</button>
                 </div>
 
-                <div className="print-section bg-white p-6 rounded-xl shadow-lg mb-8 border-t-8 border-green-700">
-                    <h2 className="text-2xl font-black text-green-800 mb-4 flex justify-between items-center">
+                <div className="bg-white p-6 rounded-xl shadow mb-8 border-t-8 border-green-700">
+                    <h2 className="text-2xl font-black text-green-800 mb-4 flex justify-between">
                         <span>📅 實際明細 - {currentProject?.name}</span>
-                        <button className="no-print bg-green-600 text-white px-6 py-2 rounded-2xl font-bold text-xl" onClick={()=>{setModalType("entry")}}>📝 登打紀錄</button>
+                        <button className="no-print bg-green-600 text-white px-6 py-2 rounded font-bold" onClick={()=>setModalType("entry")}>📝 登打紀錄</button>
                     </h2>
-                    <table className="w-full border-collapse actual-detail-table">
-                        <thead>
-                            <tr className="table-header-darkblue">
-                                <th className="border p-4 w-44">日期</th>
-                                <th className="border p-4 w-28 text-blue-100">外包</th>
-                                <th className="border p-4 w-28 text-yellow-100">何鑫</th>
-                                <th className="border p-4">機具</th>
-                                <th className="border p-4">記事</th>
-                                <th className="border p-4 w-32 no-print">操作</th>
-                            </tr>
+                    <table className="w-full border-collapse text-center">
+                        <thead className="table-header-darkblue">
+                            <tr><th className="border p-4">日期</th><th className="border p-4">外包</th><th className="border p-4">何鑫</th><th className="border p-4">機具</th><th className="border p-4">記事</th><th className="border p-4 no-print">操作</th></tr>
                         </thead>
                         <tbody>
                             {Object.entries(dailyDetails).sort((a,b)=>a[0].localeCompare(b[0])).map(([date, data]) => (
                                 <tr key={date} className="hover:bg-green-50">
-                                    <td className="border p-4 text-center font-bold text-gray-500">{date}</td>
-                                    <td className="border p-4 text-center font-black text-blue-800">{data.labor}</td>
-                                    <td className="border p-4 text-center font-black text-orange-600">{data.support}</td>
-                                    <td className="border p-4 text-sm font-bold text-gray-700">{data.machines.join(', ')}</td>
-                                    <td className="border p-4 italic text-gray-600">{data.notes.join(' / ')}</td>
-                                    <td className="border p-4 text-center no-print">
-                                        <div className="flex justify-center gap-4">
+                                    <td className="border p-4 font-bold">{date}</td>
+                                    <td className="border p-4 font-black text-blue-800">{data.labor}</td>
+                                    <td className="border p-4 font-black text-orange-600">{data.support}</td>
+                                    <td className="border p-4 text-sm">{data.machines.join(', ')}</td>
+                                    <td className="border p-4 italic text-gray-600">{data.notes.join('/')}</td>
+                                    <td className="border p-4 no-print">
+                                        <div className="flex gap-2 justify-center">
                                             <button className="text-blue-600 font-bold" onClick={()=>{
-                                                const laborRec = data.raw.find(r => r.type === "labor") || { labor: 0, support: 0, note: "" };
-                                                const craneRecs = data.raw.filter(r => r.type === "crane").map(r => ({ spec: r.spec, hr: r.hr }));
-                                                setEntryForm({ date, labor: laborRec.labor, support: laborRec.support, note: laborRec.note, machines: craneRecs });
-                                                setRecords(records.filter(r => !(r.projectId === currentProjectId && r.date === date)));
+                                                const lab = data.raw.find(r=>r.type==="labor") || {labor:0,support:0,note:""};
+                                                const mcs = data.raw.filter(r=>r.type==="crane").map(r=>({spec:r.spec,hr:r.hr}));
+                                                setEntryForm({date, labor:lab.labor, support:lab.support, note:lab.note, machines:mcs});
+                                                setRecords(records.filter(r=>!(r.projectId===currentProjectId && r.date===date)));
                                                 setModalType("entry");
                                             }}>編輯</button>
-                                            <button className="text-red-500 font-bold" onClick={()=>{if(confirm("確定刪除？")){setRecords(records.filter(r=>!(r.projectId===currentProjectId && r.date===date)));syncToCloud();}}}>刪除</button>
+                                            <button className="text-red-500 font-bold" onClick={()=>{if(confirm("刪除？")){setRecords(records.filter(r=>!(r.projectId===currentProjectId && r.date===date)));syncToCloud();}}}>刪除</button>
                                         </div>
                                     </td>
                                 </tr>
                             ))}
                         </tbody>
-                        <tfoot className="bg-green-800 text-white font-black text-xl">
-                            <tr><td className="border p-4 text-right">實際合計：</td><td className="border p-4 text-center">{actTotalLabor}</td><td className="border p-4 text-center">{actTotalSupport}</td><td colSpan="3" className="border p-4 text-right pr-10">共 {actTotalSum} 工</td></tr>
-                        </tfoot>
                     </table>
                 </div>
 
-                <div className="print-section bg-white p-8 rounded-xl shadow-2xl border-4 border-gray-800">
-                    <h2 className="text-3xl font-black text-center mb-8 pb-4 border-b-4 border-gray-800">{currentProject?.name} 分析報表</h2>
+                {/* 📊 損益分析報表區 (結案打勾在這裡) */}
+                <div className="bg-white p-8 rounded-xl shadow border-4 border-gray-800">
+                    <h2 className="text-3xl font-black text-center mb-8 pb-4 border-b-4 border-gray-800 uppercase">{currentProject?.name} 施工分析報表</h2>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
                         <div>
-                            <h3 className="font-bold text-2xl mb-4 border-l-8 border-blue-900 pl-2 text-center">工數分析</h3>
-                            <table className="w-full border-2 border-gray-800 text-center text-xl">
+                            <h3 className="font-bold text-2xl mb-4 border-l-8 border-blue-900 pl-4">工數與結案狀態</h3>
+                            <table className="w-full border-2 border-gray-800 text-center text-xl mb-6 font-bold">
                                 <thead className="bg-gray-800 text-white"><tr><th>預計</th><th>實際</th><th>偏差</th></tr></thead>
                                 <tbody>
-                                    <tr><td className="border p-2">{estTotalSum}</td><td className="border p-2 font-bold">{actTotalSum}</td><td className={`border p-2 font-bold ${laborVariance > 0 ? "text-red-600" : "text-green-700"}`}>{laborVariance > 0 ? "+" : ""}{laborVariance}</td></tr>
+                                    <tr><td className="border p-2">{estTotalSum}</td><td className="border p-2">{actTotalSum}</td><td className={`border p-2 ${actTotalSum-estTotalSum > 0 ? "text-red-600" : "text-green-700"}`}>{actTotalSum-estTotalSum}</td></tr>
                                 </tbody>
                             </table>
+                            
+                            {/* --- 結案打勾按鈕 --- */}
+                            <div className="mt-8 p-6 bg-blue-50 border-4 border-blue-900 rounded-lg flex items-center justify-between">
+                                <div>
+                                    <h4 className="text-2xl font-black">📈 工程狀態：{isCompleted ? <span className="text-red-600">已結案</span> : <span className="text-blue-600">施工中</span>}</h4>
+                                    <p className="text-sm font-bold mt-1 text-gray-500 italic">勾選後將同步雲端狀態</p>
+                                </div>
+                                <div className="flex items-center gap-3">
+                                    <span className="font-bold">結案打勾:</span>
+                                    <input 
+                                        type="checkbox" 
+                                        className="no-print w-10 h-10 cursor-pointer accent-blue-900" 
+                                        checked={isCompleted} 
+                                        onChange={e => {
+                                            const newStatus = {...projectStatus, [currentProjectId]: e.target.checked};
+                                            setProjectStatus(newStatus);
+                                            // 勾選完立刻自動上傳雲端
+                                            setTimeout(() => syncToCloud(), 500);
+                                        }}
+                                    />
+                                </div>
+                            </div>
                         </div>
-                        <div className="flex flex-col items-center">
-                            <h3 className="font-bold text-2xl mb-4 border-l-8 border-orange-500 pl-2 w-full text-center">機具對比</h3>
-                            <div className="w-72 h-72 no-print"><canvas ref={pieRef}></canvas></div>
+                        <div className="flex flex-col items-center justify-center border-l border-gray-200">
+                             <h3 className="font-bold text-2xl mb-4 text-center">機具對比分析</h3>
+                             <div className="w-72 h-72 no-print"><canvas ref={pieRef}></canvas></div>
                         </div>
                     </div>
                 </div>
             </div>
 
+            {/* Modal: 登打視窗 */}
             {modalType === "entry" && (
                 <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
-                    <div className="bg-white p-8 rounded-2xl w-full max-w-2xl border-t-8 border-green-600 shadow-2xl overflow-y-auto max-h-[90vh]">
-                        <h3 className="font-black text-3xl mb-6 text-green-700">📝 登打實際紀錄</h3>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-                            <div><label className="font-bold text-xl">日期:</label><input type="date" className="border-2 p-3 w-full rounded" value={entryForm.date} onChange={e=>setEntryForm({...entryForm, date:e.target.value})}/></div>
+                    <div className="bg-white p-8 rounded-2xl w-full max-w-2xl border-t-8 border-green-600 shadow-2xl overflow-y-auto max-h-[95vh]">
+                        <h3 className="font-black text-3xl mb-6 text-green-700">📝 實際紀錄</h3>
+                        <div className="grid grid-cols-2 gap-6 mb-6">
+                            <div><label className="font-bold">日期:</label><input type="date" className="border-2 p-3 w-full" value={entryForm.date} onChange={e=>setEntryForm({...entryForm,date:e.target.value})}/></div>
                             <div className="grid grid-cols-2 gap-4">
-                                <div><label className="font-bold text-blue-800">外包:</label><input type="number" className="border-2 p-3 w-full rounded bg-blue-50" value={entryForm.labor} onChange={e=>setEntryForm({...entryForm, labor:e.target.value})}/></div>
-                                <div><label className="font-bold text-orange-600">何鑫:</label><input type="number" className="border-2 p-3 w-full rounded bg-orange-50" value={entryForm.support} onChange={e=>setEntryForm({...entryForm, support:e.target.value})}/></div>
+                                <div><label className="font-bold text-blue-800">外包:</label><input type="number" className="border-2 p-3 w-full text-center" value={entryForm.labor} onChange={e=>setEntryForm({...entryForm,labor:e.target.value})}/></div>
+                                <div><label className="font-bold text-orange-600">何鑫:</label><input type="number" className="border-2 p-3 w-full text-center" value={entryForm.support} onChange={e=>setEntryForm({...entryForm,support:e.target.value})}/></div>
                             </div>
                         </div>
                         <div className="mb-6 bg-gray-50 p-4 rounded-xl border">
-                            <label className="font-black text-xl block mb-3 border-b pb-1">機具使用:</label>
+                            <label className="font-black text-xl mb-3 block">機具:</label>
                             {entryForm.machines.map((m, idx) => (
-                                <div key={idx} className="flex gap-2 mb-3 items-center">
-                                    <select className="border-2 p-2 rounded flex-1 bg-white font-bold" value={m.spec} onChange={e=>{const newM=entryForm.machines.map((x,i)=>i===idx?{...x,spec:e.target.value}:x);setEntryForm({...entryForm,machines:newM})}}>
-                                        {sortMachines(machineOptions).map(opt=><option key={opt} value={opt}>{opt}</option>)}
+                                <div key={idx} className="flex gap-2 mb-3">
+                                    <select className="border-2 p-2 flex-1 font-bold" value={m.spec} onChange={e=>{const nm=entryForm.machines.map((x,i)=>i===idx?{...x,spec:e.target.value}:x);setEntryForm({...entryForm,machines:nm})}}>
+                                        {machineOptions.map(o=><option key={o} value={o}>{o}</option>)}
                                     </select>
-                                    <input type="number" className="border-2 p-2 w-20 rounded text-center font-black" value={m.hr} onChange={e=>{const newM=entryForm.machines.map((x,i)=>i===idx?{...x,hr:e.target.value}:x);setEntryForm({...entryForm,machines:newM})}}/>
-                                    <button className="text-red-500 font-bold text-2xl px-2" onClick={()=>setEntryForm({...entryForm,machines:entryForm.machines.filter((_,i)=>i!==idx)})}>✕</button>
+                                    <input type="number" className="border-2 p-2 w-20 text-center font-black" value={m.hr} onChange={e=>{const nm=entryForm.machines.map((x,i)=>i===idx?{...x,hr:e.target.value}:x);setEntryForm({...entryForm,machines:nm})}}/>
+                                    <button onClick={()=>setEntryForm({...entryForm,machines:entryForm.machines.filter((_,i)=>i!==idx)})}>✕</button>
                                 </div>
                             ))}
-                            <button className="text-blue-600 font-black hover:underline mt-2" onClick={()=>setEntryForm({...entryForm, machines: [...entryForm.machines, {spec: sortMachines(machineOptions)[0], hr: 8}]})}>+ 新增機具</button>
+                            <button className="text-blue-600 font-bold" onClick={()=>setEntryForm({...entryForm,machines:[...entryForm.machines,{spec:machineOptions[0],hr:8}]})}>+ 新增機具</button>
                         </div>
-                        <textarea className="border-2 p-3 w-full rounded h-32 mb-6 shadow-inner" placeholder="紀錄今日狀況..." value={entryForm.note} onChange={e=>setEntryForm({...entryForm, note:e.target.value})}/>
+                        <textarea className="border-2 p-3 w-full h-24 mb-6" placeholder="記事..." value={entryForm.note} onChange={e=>setEntryForm({...entryForm,note:e.target.value})}/>
                         <div className="flex gap-4">
-                            <button className="bg-green-700 text-white flex-1 py-5 rounded-2xl font-black text-2xl shadow-xl hover:bg-green-800" onClick={() => {
+                            <button className="bg-green-700 text-white flex-1 py-5 rounded-2xl font-black text-2xl" onClick={() => {
                                 const nr = [...records, { projectId: currentProjectId, company: currentCompany, date: entryForm.date, id: Date.now(), type: "labor", labor: Number(entryForm.labor), support: Number(entryForm.support), note: entryForm.note }];
                                 entryForm.machines.forEach(m => { nr.push({ projectId: currentProjectId, company: currentCompany, date: entryForm.date, id: Date.now() + Math.random(), type: "crane", spec: m.spec, hr: Number(m.hr) }); });
-                                setRecords(nr);
-                                setModalType("");
-                                setTimeout(() => syncToCloud({ company: currentCompany, projectName: currentProject?.name, records: nr.filter(r => r.projectId === currentProjectId) }), 500);
+                                setRecords(nr); setModalType("");
+                                setTimeout(() => syncToCloud({ company: currentCompany, projectName: currentProject?.name, records: nr.filter(r => r.projectId === currentProjectId), plans: currentPlans, equipments: machineOptions, projects: projects }), 500);
                             }}>儲存並同步雲端</button>
-                            <button className="bg-gray-200 text-gray-700 px-8 rounded-2xl font-bold" onClick={()=>setModalType("")}>取消</button>
+                            <button className="bg-gray-200 px-8 rounded-2xl font-bold" onClick={()=>setModalType("")}>取消</button>
                         </div>
                     </div>
                 </div>
             )}
 
+            {/* Modal: 機具庫 */}
             {modalType === "manageMachines" && (
                 <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
-                    <div className="bg-white p-6 rounded-xl w-full max-w-md shadow-2xl">
-                        <h3 className="font-black text-2xl mb-4 border-b pb-2">⚙️ 機具庫管理</h3>
-                        <div className="space-y-2 mb-4 max-h-60 overflow-y-auto font-bold">
-                            {machineOptions.map(m => <div key={m} className="flex justify-between border p-2 rounded items-center"><span>{m}</span><button className="text-red-500 text-xl px-2" onClick={()=>{if(confirm(`刪除: ${m}？`)){const nl=machineOptions.filter(x=>x!==m);setMachineOptions(nl);syncToCloud({equipments:nl})}}}>✕</button></div>)}
+                    <div className="bg-white p-6 rounded-xl w-full max-w-md shadow-2xl font-bold">
+                        <h3 className="font-black text-2xl mb-4 border-b">⚙️ 雲端機具庫</h3>
+                        <div className="space-y-2 mb-4 max-h-60 overflow-y-auto">
+                            {machineOptions.map(m => <div key={m} className="flex justify-between border p-2 rounded"><span>{m}</span><button className="text-red-500" onClick={()=>{const nl=machineOptions.filter(x=>x!==m);setMachineOptions(nl);syncToCloud({equipments:nl,projects:projects})}}>✕</button></div>)}
                         </div>
-                        <button className="bg-blue-600 text-white w-full py-2 rounded font-bold" onClick={()=>{const n=prompt("新增機具名稱"); if(n){const nl=sortMachines([...machineOptions,n]);setMachineOptions(nl);syncToCloud({equipments:nl})}}}>+ 新增機具</button>
-                        <button className="w-full mt-4 text-gray-500 font-bold" onClick={()=>setModalType("")}>關閉</button>
+                        <button className="bg-blue-600 text-white w-full py-2 rounded font-bold" onClick={()=>{const n=prompt("名稱");if(n){const nl=sortMachines([...machineOptions,n]);setMachineOptions(nl);syncToCloud({equipments:nl,projects:projects})}}}>+ 新增</button>
+                        <button className="w-full mt-4 text-gray-500" onClick={()=>setModalType("")}>關閉</button>
                     </div>
                 </div>
             )}
