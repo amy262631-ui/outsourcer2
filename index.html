@@ -37,16 +37,15 @@ function App() {
     const [projectPlans, setProjectPlans] = React.useState(load("projectPlans", {}));
     const [machineOptions, setMachineOptions] = React.useState(load("machineOptions", ["25T 吊車", "45T 吊車", "高空作業車"]));
     const [projectStatus, setProjectStatus] = React.useState(load("projectStatus", {}));
+    /* --- 搜尋關鍵字：const [modalType, setModalType] --- */
     const [modalType, setModalType] = React.useState("");
-    const [entryForm, setEntryForm] = React.useState({ date: new Date().toISOString().split('T')[0], labor: 0, support: 0, note: "", machines: [] });
 
-    /* === 在這裡貼上 Google Sheets 連線邏輯 === */
-    const GAS_URL = "https://script.google.com/macros/s/AKfycbzc7eXQObf5fkZ4iqje4_I4U3avG9fveDJe3UumMuaH5v0uSo8M75w_e_IbdRiuHtqPSg/exec";
-
-  const syncToCloudBackup = async () => {
+    // 這裡是同步備份的函式定義
+    const syncToCloudBackup = async () => {
         if (!currentProjectId) return alert("請先選擇工程再進行同步");
         
-        // 打包當前選定工程的所有資料
+        const GAS_URL = "https://script.google.com/macros/s/AKfycbzc7eXQObf5fkZ4iqje4_I4U3avG9fveDJe3UumMuaH5v0uSo8M75w_e_IbdRiuHtqPSg/exec"; // <--- 記得填入網址
+
         const payload = {
             company: currentCompany,
             projectName: currentProject?.name,
@@ -59,7 +58,6 @@ function App() {
         };
 
         try {
-            // 使用 no-cors 模式確保即使跨網域也能送出
             await fetch(GAS_URL, {
                 method: "POST",
                 mode: "no-cors",
@@ -68,8 +66,7 @@ function App() {
             });
             alert("☁️ 資料已成功備份至雲端存檔！");
         } catch (error) {
-            console.error("同步失敗:", error);
-            alert("同步失敗，請檢查網路連線");
+            alert("同步失敗，請檢查網路");
         }
     };
     React.useEffect(() => {
