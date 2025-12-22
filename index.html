@@ -1,0 +1,442 @@
+<!DOCTYPE html><html lang="zh-TW"><head>    <meta charset="UTF-8" />    <meta name="viewport" content="width=device-width, initial-scale=1.0" />    <title>工程執行分析對照系統</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/react@18/umd/react.development.js"></script>    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels"></script>
+    <style>
+        body { font-size: 20px; font-family: sans-serif; }
+        input, select, textarea { font-size: 20px !important; }
+        .table-header-darkblue { background-color: #1e3a8a !important; color: white !important; }
+        .actual-detail-table td { font-size: 22px !important; }
+        .actual-detail-table .font-black { font-size: 26px !important; }
+        @media print { 
+            .no-print { display: none !important; } 
+            body { background: white !important; padding: 0; margin: 0; }
+            .bg-white { box-shadow: none !important; border: none !important; margin-bottom: 0 !important; }
+            .print-section { break-after: page; padding: 20px !important; width: 100% !important; }
+            .print-section:last-child { break-after: auto; }
+            table td, table th { padding: 4px 8px !important; font-size: 14px !important; line-height: 1.2 !important; border: 1px solid #333 !important; }
+            textarea, input { font-size: 16px !important; }
+            h2 { font-size: 22px !important; margin-bottom: 10px !important; }
+        }
+    </style></head>
+<body class="bg-gray-100 min-h-screen p-4 md:p-8">    <div id="root"></div>    <div id="modal-root"></div>
+    <script type="text/babel">
+
+const load = (k, f) => { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : f; } catch { return f; } };
+const save = (k, v) => localStorage.setItem(k, JSON.stringify(v));
+const sortMachines = (list) => [...list].sort((a,b) => (parseInt(a.match(/\d+/))||0) - (parseInt(b.match(/\d+/))||0));
+
+function App() {
+    const [projects, setProjects] = React.useState(load("projects", []));
+    const [currentProjectId, setCurrentProjectId] = React.useState(load("currentProjectId", ""));
+    const [companies, setCompanies] = React.useState(load("companies", ["紘展", "元鴻"]));
+    const [currentCompany, setCurrentCompany] = React.useState(load("currentCompany", "紘展"));
+    const [records, setRecords] = React.useState(load("records", []));
+    const [projectPlans, setProjectPlans] = React.useState(load("projectPlans", {}));
+    const [machineOptions, setMachineOptions] = React.useState(load("machineOptions", ["25T 吊車", "45T 吊車", "高空作業車"]));
+    const [projectStatus, setProjectStatus] = React.useState(load("projectStatus", {}));
+    const [modalType, setModalType] = React.useState("");
+    const [entryForm, setEntryForm] = React.useState({ date: new Date().toISOString().split('T')[0], labor: 0, support: 0, note: "", machines: [] });
+
+    React.useEffect(() => {
+        save("projects", projects); save("currentProjectId", currentProjectId);
+        save("companies", companies); save("currentCompany", currentCompany);
+        save("records", records); save("projectPlans", projectPlans);
+        save("machineOptions", machineOptions); save("projectStatus", projectStatus);
+    }, [projects, currentProjectId, companies, currentCompany, records, projectPlans, machineOptions, projectStatus]);
+
+    const currentProject = projects.find(p => p.id === currentProjectId);
+    const currentPlans = projectPlans[currentProjectId] || [];
+    const isCompleted = projectStatus[currentProjectId] || false;
+
+    const estTotalLabor = currentPlans.reduce((s, p) => s + (Number(p.labor) || 0), 0);
+    const estTotalSupport = currentPlans.reduce((s, p) => s + (Number(p.support) || 0), 0);
+    const estTotalSum = estTotalLabor + estTotalSupport;
+    
+    const projectRecords = records.filter(r => r.projectId === currentProjectId && r.company === currentCompany);
+    const dailyDetails = {};
+    projectRecords.forEach(r => {
+        if (!dailyDetails[r.date]) dailyDetails[r.date] = { labor: 0, support: 0, machines: [], notes: [], raw: [] };
+        dailyDetails[r.date].raw.push(r);
+        if (r.type === "labor") {
+            dailyDetails[r.date].labor += Number(r.labor || 0);
+            dailyDetails[r.date].support += Number(r.support || 0);
+            if (r.note) dailyDetails[r.date].notes.push(r.note);
+        } else if (r.type === "crane") {
+            dailyDetails[r.date].machines.push(`${r.spec}(${(Number(r.hr)/8).toFixed(1)}台)`);
+        }
+    });
+
+    const actTotalLabor = Object.values(dailyDetails).reduce((s, d) => s + d.labor, 0);
+    const actTotalSupport = Object.values(dailyDetails).reduce((s, d) => s + d.support, 0);
+    const actTotalSum = actTotalLabor + actTotalSupport;
+
+    const estMachineStats = {};
+    currentPlans.forEach(p => (p.machines || []).forEach(m => { estMachineStats[m.spec] = (estMachineStats[m.spec] || 0) + Number(m.qty); }));
+    const actMachineStats = {};
+    projectRecords.filter(r => r.type === "crane").forEach(r => { actMachineStats[r.spec] = (actMachineStats[r.spec] || 0) + (Number(r.hr) / 8); });
+
+    const laborVariance = actTotalSum - estTotalSum;
+    const variancePercent = estTotalSum > 0 ? ((laborVariance / estTotalSum) * 100).toFixed(1) : 0;
+
+    const pieRef = React.useRef(null);
+    const chartRef = React.useRef(null);
+    React.useEffect(() => {
+        if (!pieRef.current || (actTotalSum === 0)) { if (chartRef.current) chartRef.current.destroy(); return; }
+        if (chartRef.current) chartRef.current.destroy();
+        const ctx = pieRef.current.getContext("2d");
+        chartRef.current = new Chart(ctx, {
+            type: "pie",
+            data: { labels: ["外包工", "何鑫"], datasets: [{ data: [actTotalLabor, actTotalSupport], backgroundColor: ["#1e3a8a", "#fbbf24"] }] },
+            plugins: [ChartDataLabels],
+            options: { plugins: { datalabels: { color: '#fff', font: { weight: 'bold' }, formatter: (v) => (v*100/actTotalSum).toFixed(1) + "%" }}}
+        });
+        return () => { if(chartRef.current) chartRef.current.destroy(); };
+    }, [actTotalLabor, actTotalSupport, actTotalSum]);
+
+   /* --- 深度優化版：確保 Word 合計數字正確顯示 --- */
+const exportToWord = () => {
+    if (!currentProject) return alert("請先選擇工程");
+    const dateStr = new Date().toISOString().slice(2, 10).replace(/-/g, '');
+    const fileName = `${dateStr}-${currentProject.name}-現場安裝預估執行表.doc`;
+    
+    // 1. 複製目前的內容區
+    const exportArea = document.getElementById('export-area').cloneNode(true);
+    
+    // 2. 修正問題 1 & 2：強制合計行文字為黑色，避免白字看不見
+    // 並同時抓取動態數字
+    const sections = ['plan', 'actual'];
+    sections.forEach(s => {
+        const webFoot = document.querySelector(`#section-${s} tfoot tr`);
+        const wordFoot = exportArea.querySelector(`#section-${s} tfoot tr`);
+        if (webFoot && wordFoot) {
+            for (let i = 0; i < wordFoot.cells.length; i++) {
+                wordFoot.cells[i].innerText = webFoot.cells[i].innerText;
+                // 強制設為黑字與淺灰背景，確保 Word 100% 可讀
+                wordFoot.cells[i].style.color = "#000000"; 
+                wordFoot.cells[i].style.backgroundColor = "#EFEFEF";
+            }
+        }
+    });
+
+    // 3. 修正問題 3 & 4：移除所有「操作」欄位的格子，防止出現奇怪底色
+    // 在網頁表格中，操作通常是最後一欄 (nth-child)
+    exportArea.querySelectorAll('tr').forEach(tr => {
+        if (tr.cells.length > 0) {
+            // 找到最後一格，如果它是操作欄位則移除
+            const lastCell = tr.cells[tr.cells.length - 1];
+            // 判斷是否為操作欄位（根據標題或內容）
+            if (lastCell.innerText.includes('操作') || tr.closest('thead')) {
+                // 如果是 thead 且最後一格是「操作」，移除它
+                if (tr.closest('thead') && lastCell.innerText.includes('操作')) {
+                    lastCell.remove();
+                }
+            } else {
+                // 如果是 tbody 的操作列（按鈕區），直接移除最後一格
+                lastCell.remove();
+            }
+        }
+    });
+
+    // 4. 下拉選單與輸入框轉純文字 (保持原有優化)
+    exportArea.querySelectorAll('select').forEach(el => {
+        const text = el.options[el.selectedIndex]?.text || "";
+        const span = document.createElement('span');
+        span.textContent = text;
+        el.parentNode.replaceChild(span, el);
+    });
+
+    exportArea.querySelectorAll('input, textarea').forEach(el => {
+        const span = document.createElement('span');
+        span.textContent = el.value || "";
+        span.style.color = "#000000"; // 強制黑字
+        el.parentNode.replaceChild(span, el);
+    });
+
+    // 5. 移除剩餘按鈕
+    exportArea.querySelectorAll('button, .no-print').forEach(el => el.remove());
+
+    // 6. 組合 HTML 並匯出
+    const header = `
+        <html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>
+        <head><meta charset='utf-8'>
+        <style>
+            body { font-family: "微軟正黑體", sans-serif; }
+            table { border-collapse: collapse; width: 100%; margin-bottom: 20px; table-layout: fixed; border: 1px solid black; }
+            th { background-color: #1e3a8a; color: white !important; padding: 8px; border: 1px solid black; }
+            td { padding: 8px; border: 1px solid black; text-align: center; color: black; }
+            .table-header-darkblue { background-color: #1e3a8a; color: white; mso-shading: windowtext; mso-pattern: solid #1E3A8A; }
+        </style>
+        </head><body>${exportArea.innerHTML}</body></html>`;
+    
+    const blob = new Blob(['\ufeff', header], { type: 'application/msword' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = fileName;
+    link.click();
+};
+    const exportToExcel = () => {
+        if (!currentProject) return alert("請先選擇工程");
+        const dateStr = new Date().toISOString().slice(2, 10).replace(/-/g, '');
+        const fileName = `${dateStr}-${currentProject.name}-現場安裝預估執行表.xlsx`;
+        const wb = XLSX.utils.book_new();
+        const planData = [["天序", "預計工作內容", "外包工", "何鑫", "機具規劃"]];
+        currentPlans.forEach((p, i) => planData.push([i+1, p.task, p.labor, p.support, (p.machines||[]).map(m=>`${m.spec}x${m.qty}`).join(', ')]));
+        XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(planData), "預估規劃");
+        const actualData = [["日期", "外包工", "何鑫", "實際機具", "狀況記事"]];
+        Object.entries(dailyDetails).sort((a,b)=>a[0].localeCompare(b[0])).forEach(([date, data]) => actualData.push([date, data.labor, data.support, data.machines.join(', '), data.notes.join(' / ')]));
+        XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(actualData), "實際執行");
+        XLSX.writeFile(wb, fileName);
+    };
+
+    return (
+        <div className="max-w-7xl mx-auto pb-10">
+            <div className="no-print bg-white p-6 rounded-xl shadow mb-6 border">
+                <div className="flex flex-wrap gap-4 items-center">
+                    <select className="border-2 p-2 rounded font-bold text-gray-700" value={currentCompany} onChange={e=>setCurrentCompany(e.target.value)}>
+                        {companies.map(c => <option key={c} value={c}>{c}</option>)}
+                    </select>
+                    <button className="bg-gray-500 text-white px-3 py-2 rounded font-bold text-sm" onClick={()=>setModalType("manageCompanies")}>管理公司</button>
+                    <div className="h-8 border-r mx-2"></div>
+                    <select className="border-2 p-2 rounded font-bold text-blue-900" value={currentProjectId} onChange={e=>setCurrentProjectId(e.target.value)}>
+                        <option value="">選擇工程</option>
+                        {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                    </select>
+                    <button className="bg-blue-600 text-white px-4 py-2 rounded font-bold" onClick={()=>{const m=prompt("請輸入工程名稱"); if(m)setProjects([...projects,{id:Date.now().toString(),name:m}])}}>+ 新增工程</button>
+                    <button className="bg-slate-700 text-white px-4 py-2 rounded font-bold" onClick={()=>setModalType("manageMachines")}>⚙️ 機具庫</button>
+                    <button className="bg-green-700 text-white px-4 py-2 rounded font-bold" onClick={exportToExcel}>📊 匯出 Excel</button>
+                    <button className="bg-blue-800 text-white px-4 py-2 rounded font-bold" onClick={exportToWord}>📝 匯出 Word</button>
+                    <button className="bg-gray-800 text-white px-6 py-2 rounded font-bold ml-auto" onClick={()=>window.print()}>🖨️ 列印分析報表</button>
+                </div>
+            </div>
+
+            <div id="export-area">
+                {/* 1. 報價前預估規劃 */}
+                <div className="print-section bg-white p-6 rounded-xl shadow-lg mb-8 border-t-8 border-blue-900">
+                    <h2 className="text-2xl font-black text-blue-900 mb-4">📋 報價前預估規劃 - {currentCompany} - {currentProject?.name}</h2>
+                    <div className="overflow-x-auto">
+                        <table className="w-full border-collapse">
+                            <thead>
+                                <tr className="table-header-darkblue">
+                                    <th className="border p-3 w-16 text-center">天序</th>
+                                    <th className="border p-3 text-left">預計工作內容</th>
+                                    <th className="border p-3 w-28 text-center text-blue-100">外包工</th>
+                                    <th className="border p-3 w-28 text-center text-yellow-100">何鑫</th>
+                                    <th className="border p-3">機具組合</th>
+                                    <th className="border p-3 w-32 no-print">操作</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {currentPlans.map((p, i) => (
+                                    <tr key={p.id} className="hover:bg-blue-50">
+                                        <td className="border p-2 text-center font-bold text-gray-400">{i+1}</td>
+                                        <td className="border p-2"><textarea className="w-full p-1 bg-transparent resize-none" rows="1" value={p.task} onChange={e=>setProjectPlans({...projectPlans,[currentProjectId]:currentPlans.map(x=>x.id===p.id?{...x,task:e.target.value}:x)})}/></td>
+                                        <td className="border p-2"><input type="number" className="w-full text-center font-bold text-blue-700" value={p.labor} onChange={e=>setProjectPlans({...projectPlans,[currentProjectId]:currentPlans.map(x=>x.id===p.id?{...x,labor:e.target.value}:x)})}/></td>
+                                        <td className="border p-2"><input type="number" className="w-full text-center font-bold text-yellow-600" value={p.support} onChange={e=>setProjectPlans({...projectPlans,[currentProjectId]:currentPlans.map(x=>x.id===p.id?{...x,support:e.target.value}:x)})}/></td>
+                                        <td className="border p-2">
+                                            {(p.machines || []).map((m, mi) => (
+                                                <div key={mi} className="flex gap-1 mb-1 items-center bg-gray-100 p-1 rounded no-print">
+                                                    <select className="text-xs border p-1" value={m.spec} onChange={e=>setProjectPlans({...projectPlans,[currentProjectId]:currentPlans.map(x=>x.id===p.id?{...x,machines:p.machines.map((v,idx)=>idx===mi?{...v,spec:e.target.value}:v)}:x)})}>
+                                                        {sortMachines(machineOptions).map(opt=><option key={opt} value={opt}>{opt}</option>)}
+                                                    </select>
+                                                    <input type="number" step="0.5" className="w-10 text-xs border text-center font-bold" value={m.qty} onChange={e=>setProjectPlans({...projectPlans,[currentProjectId]:currentPlans.map(x=>x.id===p.id?{...x,machines:p.machines.map((v,idx)=>idx===mi?{...v,qty:e.target.value}:v)}:x)})}/>
+                                                    <button className="text-red-500 font-bold px-1" onClick={()=>{ const newM = p.machines.filter((_,idx)=>idx!==mi); setProjectPlans({...projectPlans,[currentProjectId]:currentPlans.map(x=>x.id===p.id?{...x,machines:newM}:x)}); }}>✕</button>
+                                                </div>
+                                            ))}
+                                            <div className="hidden print:block text-xs font-bold">{(p.machines||[]).map(m=>`${m.spec}x${m.qty}`).join(', ')}</div>
+                                            <button className="text-xs text-blue-600 font-bold no-print hover:underline" onClick={()=>{ const newM = [...(p.machines||[]), {spec: sortMachines(machineOptions)[0], qty: 1}]; setProjectPlans({...projectPlans,[currentProjectId]:currentPlans.map(x=>x.id===p.id?{...x,machines:newM}:x)}); }}>+ 新增機具</button>
+                                        </td>
+                                        <td className="border p-2 text-center no-print">
+                                            <div className="flex justify-center gap-3">
+                                                <button className="text-blue-600 font-bold hover:underline" onClick={()=>alert("內容已即時儲存")}>編輯</button>
+                                                <button className="text-red-500 font-bold hover:underline" onClick={()=>{if(confirm("確定刪除此天預估？"))setProjectPlans({...projectPlans,[currentProjectId]:currentPlans.filter(x=>x.id!==p.id)})}}>刪除</button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                            <tfoot className="bg-blue-900 text-white font-black text-lg">
+                                <tr>
+                                    <td colSpan="2" className="border p-2 text-right text-blue-100">預估合計：</td>
+                                    <td className="border p-2 text-center">{estTotalLabor}</td>
+                                    <td className="border p-2 text-center">{estTotalSupport}</td>
+                                    <td colSpan="2" className="border p-2 text-blue-100">合計：{estTotalSum} 工</td>
+                                </tr>
+                            </tfoot>
+                        </table>
+                        <button className="no-print mt-4 bg-blue-100 text-blue-800 px-6 py-2 rounded font-black border-2 border-blue-300 shadow-sm" onClick={()=>{ setProjectPlans({...projectPlans, [currentProjectId]: [...currentPlans, {id:Date.now(), task:"", labor:0, support:0, machines:[]}]}); }}>+ 新增工作日</button>
+                    </div>
+                </div>
+
+                {/* 2. 實際執行明細 */}
+                <div className="print-section bg-white p-6 rounded-xl shadow-lg mb-8 border-t-8 border-green-700">
+                    <h2 className="text-2xl font-black text-green-800 mb-4 flex justify-between items-center">
+                        <span>📅 實際執行明細 - {currentCompany} - {currentProject?.name}</span>
+                        <button className="no-print bg-green-600 text-white px-6 py-2 rounded font-bold text-xl shadow-lg" onClick={()=>{ setEntryForm({ date: new Date().toISOString().split('T')[0], labor: 0, support: 0, note: "", machines: [] }); setModalType("entry"); }}>📝 登打實際紀錄</button>
+                    </h2>
+                    <div className="overflow-x-auto">
+                        <table className="w-full border-collapse actual-detail-table">
+                            <thead>
+                                <tr className="table-header-darkblue font-sans">
+                                    <th className="border p-4 w-44 text-center">日期</th>
+                                    <th className="border p-4 w-28 text-center text-blue-100">外包工</th>
+                                    <th className="border p-4 w-28 text-center text-yellow-100">何鑫</th>
+                                    <th className="border p-4">實際機具組合</th>
+                                    <th className="border p-4">狀況記事</th>
+                                    <th className="border p-4 w-40 no-print">操作</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {Object.entries(dailyDetails).sort((a,b)=>a[0].localeCompare(b[0])).map(([date, data]) => (
+                                    <tr key={date} className="hover:bg-green-50 border-b">
+                                        <td className="border p-4 text-center font-bold text-gray-500">{date}</td>
+                                        <td className="border p-4 text-center font-black text-blue-800">{data.labor}</td>
+                                        <td className="border p-4 text-center font-black text-orange-600">{data.support}</td>
+                                        <td className="border p-4 font-bold text-gray-700 text-sm">
+                                            {data.machines.map((m, idx) => <span key={idx} className="inline-block bg-blue-100 px-2 py-1 rounded m-1 border border-blue-300">{m}</span>)}
+                                        </td>
+                                        <td className="border p-4 italic text-gray-600 text-lg">{data.notes.join(' / ')}</td>
+                                        <td className="border p-4 text-center no-print text-lg">
+                                            <div className="flex justify-center gap-4">
+                                                <button className="text-blue-600 font-bold hover:underline" onClick={()=>{
+                                                    const laborRec = data.raw.find(r => r.type === "labor") || { labor: 0, support: 0, note: "" };
+                                                    const craneRecs = data.raw.filter(r => r.type === "crane").map(r => ({ spec: r.spec, hr: r.hr }));
+                                                    setEntryForm({ date, labor: laborRec.labor, support: laborRec.support, note: laborRec.note, machines: craneRecs });
+                                                    setRecords(records.filter(r => !(r.projectId === currentProjectId && r.company === currentCompany && r.date === date)));
+                                                    setModalType("entry");
+                                                }}>編輯</button>
+                                                <button className="text-red-500 font-bold hover:underline" onClick={()=>{if(confirm("確定刪除此日所有紀錄？"))setRecords(records.filter(r=>!(r.projectId===currentProjectId&&r.company===currentCompany&&r.date===date)))}}>刪除</button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                            <tfoot className="bg-green-800 text-white font-black text-xl">
+                                <tr>
+                                    <td className="border p-4 text-right text-green-100">實際執行合計：</td>
+                                    <td className="border p-4 text-center">{actTotalLabor}</td>
+                                    <td className="border p-4 text-center">{actTotalSupport}</td>
+                                    <td colSpan="3" className="border p-4 text-green-100 text-sm font-normal text-right pr-6">合計：{actTotalSum} 工</td>
+                                </tr>
+                            </tfoot>
+                        </table>
+                    </div>
+                </div>
+
+                {/* 3. 損益分析報表 */}
+                <div className="print-section bg-white p-8 rounded-xl shadow-2xl border-4 border-gray-800 font-sans">
+                    <h2 className="text-3xl font-black text-center mb-8 border-b-4 border-gray-800 pb-4 uppercase">{currentCompany} - {currentProject?.name} 施工損益分析報表</h2>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
+                        <div>
+                            <h3 className="font-bold text-2xl mb-4 bg-gray-100 p-2 border-l-8 border-blue-900">工數成本對比 (Labor)</h3>
+                            <table className="w-full border-2 border-gray-800 font-bold mb-6 text-center text-xl">
+                                <thead><tr className="bg-gray-800 text-white"><th>項目</th><th>預計</th><th>實際</th><th>偏差</th></tr></thead>
+                                <tbody className="leading-loose">
+                                    <tr><td className="border p-2 bg-gray-50">總工數</td><td className="border p-2">{estTotalSum}</td><td className="border p-2 text-blue-800">{actTotalSum}</td><td className={`border p-2 ${laborVariance > 0 ? "text-red-600" : "text-green-700"}`}>{laborVariance > 0 ? "+" : ""}{laborVariance} ({variancePercent}%)</td></tr>
+                                </tbody>
+                            </table>
+                            <div className="mt-8 p-6 border-4 border-blue-900 rounded-lg bg-blue-50/30">
+                                <h4 className="text-2xl font-black mb-4 flex items-center gap-3">
+                                    📈 執行狀態：{isCompleted ? <span className="bg-black text-white px-3 py-1 rounded text-xl">結案</span> : <span className="bg-blue-600 text-white px-3 py-1 rounded text-xl">進行中</span>}
+                                    <input type="checkbox" className="no-print w-8 h-8 cursor-pointer" checked={isCompleted} onChange={e=>setProjectStatus({...projectStatus, [currentProjectId]: e.target.checked})}/>
+                                </h4>
+                                <p className="p-4 bg-white border-l-8 border-gray-800 italic font-bold text-xl leading-relaxed">{isCompleted ? (laborVariance <= 0 ? "完工報告：施工效率優於預期。" : "完工報告：實際工數超出預算。") : "施工進行中。"}</p>
+                            </div>
+                        </div>
+                        <div className="flex flex-col items-center">
+                            <h3 className="font-bold text-2xl mb-4 bg-gray-100 p-2 w-full text-center border-l-8 border-orange-500">機具資源消耗對比</h3>
+                            <table className="w-full border-2 border-gray-800 mb-6 font-bold text-center text-lg">
+                                <thead className="bg-gray-800 text-white"><tr><th className="p-2 border">機具規格</th><th className="p-2 border">預計(台)</th><th className="p-2 border">實際(台)</th></tr></thead>
+                                <tbody className="leading-normal">{Object.keys({...estMachineStats, ...actMachineStats}).sort().map(spec => (<tr key={spec} className="border-b"><td className="border p-2">{spec}</td><td className="border p-2 text-blue-700 font-black">{estMachineStats[spec] || 0}</td><td className="border p-2 text-red-600 font-black">{(actMachineStats[spec] || 0).toFixed(1)}</td></tr>))}</tbody>
+                            </table>
+                            <div className="w-72 h-72 no-print"><canvas ref={pieRef}></canvas></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            {/* Modals */}
+            {modalType === "manageCompanies" && (
+                <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+                    <div className="bg-white p-6 rounded-xl w-full max-w-md shadow-2xl">
+                        <h3 className="font-black text-2xl mb-4 border-b pb-2">管理公司</h3>
+                        <div className="space-y-2 mb-4 max-h-60 overflow-y-auto">
+                            {companies.map(c => <div key={c} className="flex justify-between border p-2 rounded items-center"><span>{c}</span><button className="text-red-500 font-bold text-xl" onClick={()=>{if(confirm(`刪除: ${c}？`)) setCompanies(companies.filter(x => x !== c));}}>✕</button></div>)}
+                        </div>
+                        <button className="bg-blue-600 text-white w-full py-2 rounded font-bold" onClick={()=>{const n=prompt("輸入公司名稱"); if(n)setCompanies([...companies, n]);}}>+ 新增公司</button>
+                        <button className="w-full mt-2 text-gray-500" onClick={()=>setModalType("")}>關閉</button>
+                    </div>
+                </div>
+            )}
+
+            {modalType === "manageMachines" && (
+                <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+                    <div className="bg-white p-6 rounded-xl w-full max-w-md shadow-2xl">
+                        <h3 className="font-black text-2xl mb-4 border-b pb-2">⚙️ 機具庫管理</h3>
+                        <div className="space-y-2 mb-4 max-h-60 overflow-y-auto">
+                            {machineOptions.map(m => <div key={m} className="flex justify-between border p-2 rounded items-center font-bold"><span>{m}</span><button className="text-red-500 font-bold text-xl" onClick={()=>{if(confirm(`刪除: ${m}？`)) setMachineOptions(machineOptions.filter(x => x !== m));}}>✕</button></div>)}
+                        </div>
+                        <button className="bg-blue-600 text-white w-full py-2 rounded font-bold" onClick={()=>{const n=prompt("新增機具名稱"); if(n)setMachineOptions(sortMachines([...machineOptions, n]));}}>+ 新增機具</button>
+                        <button className="w-full mt-2 text-gray-500" onClick={()=>setModalType("")}>關閉</button>
+                    </div>
+                </div>
+            )}
+
+            {modalType === "entry" && (
+                <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+                    <div className="bg-white p-8 rounded-2xl w-full max-w-2xl border-t-8 border-green-600 overflow-y-auto max-h-[95vh] shadow-2xl">
+                        <h3 className="font-black text-3xl mb-6 text-green-700">📝 實際執行紀錄 (工數 + 機具)</h3>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+                            <div><label className="font-bold text-xl">1. 日期:</label><input type="date" className="border-2 p-3 w-full rounded bg-gray-50" value={entryForm.date} onChange={e=>setEntryForm({...entryForm, date:e.target.value})}/></div>
+                            <div className="grid grid-cols-2 gap-4">
+                                <div><label className="font-bold text-xl text-blue-800 font-black">2. 外包工:</label><input type="number" className="border-2 p-3 w-full rounded font-black text-2xl bg-blue-50 text-center" value={entryForm.labor} onChange={e=>setEntryForm({...entryForm, labor:e.target.value})}/></div>
+                                <div><label className="font-bold text-xl text-orange-600 font-black">3. 何鑫:</label><input type="number" className="border-2 p-3 w-full rounded font-black text-2xl bg-orange-50 text-center" value={entryForm.support} onChange={e=>setEntryForm({...entryForm, support:e.target.value})}/></div>
+                            </div>
+                        </div>
+                        <div className="mb-6 bg-gray-50 p-4 rounded-xl border border-gray-200 shadow-inner">
+                            <label className="font-black text-xl block mb-3 border-b pb-1">4. 使用機具/吊車:</label>
+                            {entryForm.machines.map((m, idx) => (
+                                <div key={idx} className="flex gap-2 mb-3 items-center">
+                                    <select className="border-2 p-2 rounded flex-1 bg-white font-bold" value={m.spec} onChange={e=>{
+                                        const newM = entryForm.machines.map((x, i) => i === idx ? {...x, spec: e.target.value} : x);
+                                        setEntryForm({...entryForm, machines: newM});
+                                    }}>
+                                        {sortMachines(machineOptions).map(opt=><option key={opt} value={opt}>{opt}</option>)}
+                                    </select>
+                                    <input type="number" className="border-2 p-2 w-20 rounded text-center font-black" placeholder="HR" value={m.hr} onChange={e=>{
+                                        const newM = entryForm.machines.map((x, i) => i === idx ? {...x, hr: e.target.value} : x);
+                                        setEntryForm({...entryForm, machines: newM});
+                                    }}/>
+                                    <span className="font-bold text-gray-500">hr</span>
+                                    <button className="text-red-500 font-bold text-2xl px-2" onClick={()=>{
+                                        setEntryForm({...entryForm, machines: entryForm.machines.filter((_, i) => i !== idx)});
+                                    }}>✕</button>
+                                </div>
+                            ))}
+                            <button className="text-blue-600 font-black text-lg hover:underline mt-2" onClick={()=>setEntryForm({...entryForm, machines: [...entryForm.machines, {spec: sortMachines(machineOptions)[0], hr: 8}]})}>+ 新增機具</button>
+                        </div>
+                        <label className="font-bold text-xl block mb-2">5. 現場狀況記事:</label>
+                        <textarea className="border-2 p-3 w-full rounded h-32 mb-6 text-lg shadow-inner" placeholder="請紀錄今日狀況..." value={entryForm.note} onChange={e=>setEntryForm({...entryForm, note:e.target.value})}/>
+                        <div className="flex gap-4">
+                            <button className="bg-green-700 text-white flex-1 py-5 rounded-2xl font-black text-2xl shadow-xl hover:bg-green-800" onClick={()=>{
+                                if(!entryForm.date) return alert("請選擇日期");
+                                const baseRecord = { projectId: currentProjectId, company: currentCompany, date: entryForm.date, id: Date.now() };
+                                const newRecords = [...records, { ...baseRecord, type: "labor", labor: Number(entryForm.labor), support: Number(entryForm.support), note: entryForm.note }];
+                                entryForm.machines.forEach(m => { newRecords.push({ ...baseRecord, id: Date.now() + Math.random(), type: "crane", spec: m.spec, hr: Number(m.hr) }); });
+                                setRecords(newRecords);
+                                setModalType("");
+                            }}>儲存執行紀錄</button>
+                            <button className="bg-gray-200 text-gray-700 px-8 rounded-2xl font-bold text-xl" onClick={()=>setModalType("")}>取消</button>
+                        </div>
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+}
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+    </script>
+</body></html>
