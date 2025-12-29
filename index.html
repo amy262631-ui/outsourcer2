@@ -200,75 +200,111 @@ function App() {
                             <tr><th className="border p-2">天序</th><th className="border p-2">內容</th><th className="border p-2">外包</th><th className="border p-2">何鑫</th><th className="border p-2">機具組合</th><th className="border p-2 no-print">操作</th></tr>
                         </thead>
                         <tbody>
-                            {currentPlans.map((p, i) => (
-                                <tr key={p.id} className="text-center">
-                                    <td className="border p-2 font-bold">{i+1}</td>
-                                    <td className="border p-2"><textarea className="w-full bg-transparent" rows="1" value={p.task} onChange={e=>setProjectPlans({...projectPlans,[currentProjectId]:currentPlans.map(x=>x.id===p.id?{...x,task:e.target.value}:x)})} onBlur={()=>syncToCloud()}/></td>
-                                    <td className="border p-2"><input type="number" className="w-full text-center text-blue-700 font-bold" value={p.labor} onChange={e=>setProjectPlans({...projectPlans,[currentProjectId]:currentPlans.map(x=>x.id===p.id?{...x,labor:e.target.value}:x)})} onBlur={()=>syncToCloud()}/></td>
-                                    <td className="border p-2"><input type="number" className="w-full text-center text-yellow-600 font-bold" value={p.support} onChange={e=>setProjectPlans({...projectPlans,[currentProjectId]:currentPlans.map(x=>x.id===p.id?{...x,support:e.target.value}:x)})} onBlur={()=>syncToCloud()}/></td>
-                                    <td className="border p-2">
-                                        {(p.machines || []).map((m, mi) => <div key={mi} className="text-sm">{m.spec}x{m.qty} <button className="no-print text-red-500" onClick={()=>{const nm=p.machines.filter((_,idx)=>idx!==mi);setProjectPlans({...projectPlans,[currentProjectId]:currentPlans.map(x=>x.id===p.id?{...x,machines:nm}:x)});syncToCloud();}}>✕</button></div>)}
-                                        <td className="border p-2">
-    {(p.machines || []).map((m, mi) => (
-        <div key={mi} className="flex items-center gap-1 mb-2 bg-blue-50 p-1 rounded no-print-flex">
-            {/* 規格選單 */}
-            <select 
-                className="border border-blue-300 rounded text-sm font-bold bg-white"
-                value={m.spec}
-                onChange={e => {
-                    const nm = p.machines.map((x, idx) => idx === mi ? {...x, spec: e.target.value} : x);
-                    const newPlans = currentPlans.map(x => x.id === p.id ? {...x, machines: nm} : x);
-                    setProjectPlans({...projectPlans, [currentProjectId]: newPlans});
-                }}
-            >
-                {machineOptions.map(opt => <option key={opt} value={opt}>{opt}</option>)}
-            </select>
-            
-            {/* 數量輸入 */}
+                            沒錯，就是這一段！但注意看您提供的內容，裡面出現了**「兩個 <td> 疊在一起」**的情況（這就是為什麼瀏覽器報錯 <td> cannot appear as a child of <td>）。
+
+為了讓您修復後能直接正常執行且不再報錯，我幫您把這段結構整理乾淨了。請將您代碼中整段 currentPlans.map 的內容替換成下面這份：
+
+修正後的乾淨版本 (直接複製替換)
+JavaScript
+
+{currentPlans.map((p, i) => (
+    <tr key={p.id} className="text-center border-b">
+        {/* 1. 天序 */}
+        <td className="border p-2 font-bold">{i+1}</td>
+        
+        {/* 2. 內容 */}
+        <td className="border p-2">
+            <textarea 
+                className="w-full bg-transparent" 
+                rows="1" 
+                value={p.task} 
+                onChange={e=>setProjectPlans({...projectPlans,[currentProjectId]:currentPlans.map(x=>x.id===p.id?{...x,task:e.target.value}:x)})} 
+                onBlur={()=>syncToCloud()}
+            />
+        </td>
+        
+        {/* 3. 外包 */}
+        <td className="border p-2">
             <input 
                 type="number" 
-                className="w-12 border border-blue-300 rounded text-center font-bold" 
-                value={m.qty} 
-                onChange={e => {
-                    const nm = p.machines.map((x, idx) => idx === mi ? {...x, qty: e.target.value} : x);
-                    const newPlans = currentPlans.map(x => x.id === p.id ? {...x, machines: nm} : x);
-                    setProjectPlans({...projectPlans, [currentProjectId]: newPlans});
-                }}
+                className="w-full text-center text-blue-700 font-bold" 
+                value={p.labor} 
+                onChange={e=>setProjectPlans({...projectPlans,[currentProjectId]:currentPlans.map(x=>x.id===p.id?{...x,labor:e.target.value}:x)})} 
+                onBlur={()=>syncToCloud()}
             />
-            <span className="text-xs">台</span>
-            
-            {/* 刪除按鈕 */}
-            <button className="no-print text-red-500 hover:text-red-700 ml-1" onClick={()=>{
-                const nm = p.machines.filter((_, idx) => idx !== mi);
-                const newPlans = currentPlans.map(x => x.id === p.id ? {...x, machines: nm} : x);
-                setProjectPlans({...projectPlans, [currentProjectId]: newPlans});
-                syncToCloud();
-            }}>✕</button>
-        </div>
-    ))}
-    
-    {/* 列印時顯示的純文字 (避免列印出下拉選單框) */}
-    <div className="hidden print:block">
-        {(p.machines || []).map((m, mi) => (
-            <div key={mi}>{m.spec} x {m.qty}台</div>
-        ))}
-    </div>
+        </td>
+        
+        {/* 4. 何鑫 */}
+        <td className="border p-2">
+            <input 
+                type="number" 
+                className="w-full text-center text-yellow-600 font-bold" 
+                value={p.support} 
+                onChange={e=>setProjectPlans({...projectPlans,[currentProjectId]:currentPlans.map(x=>x.id===p.id?{...x,support:e.target.value}:x)})} 
+                onBlur={()=>syncToCloud()}
+            />
+        </td>
 
-    <button 
-        className="text-xs bg-blue-500 text-white px-2 py-1 rounded hover:bg-blue-600 no-print mt-1" 
-        onClick={() => {
-            const nm = [...(p.machines || []), { spec: machineOptions[0], qty: 1 }];
-            const newPlans = currentPlans.map(x => x.id === p.id ? { ...x, machines: nm } : x);
-            setProjectPlans({ ...projectPlans, [currentProjectId]: newPlans });
-        }}
-    >
-        + 新增機具
-    </button>
-</td>
-                                    </td>
-                                    <td className="border p-2 no-print"><button className="text-red-500 font-bold" onClick={()=>{setProjectPlans({...projectPlans,[currentProjectId]:currentPlans.filter(x=>x.id!==p.id)});syncToCloud();}}>刪除</button></td>
-                                </tr>
+        {/* 5. 機具組合 (這是修正過的區塊) */}
+        <td className="border p-2">
+            <div className="flex flex-col gap-1">
+                {(p.machines || []).map((m, mi) => (
+                    <div key={`${p.id}-mach-${mi}`} className="flex items-center gap-1 bg-blue-50 p-1 rounded no-print-flex">
+                        {/* 規格選單 */}
+                        <select 
+                            className="border border-blue-300 rounded text-sm font-bold bg-white px-1"
+                            value={m.spec}
+                            onChange={e => {
+                                const nm = p.machines.map((x, idx) => idx === mi ? {...x, spec: e.target.value} : x);
+                                setProjectPlans({...projectPlans, [currentProjectId]: currentPlans.map(x => x.id === p.id ? {...x, machines: nm} : x)});
+                            }}
+                        >
+                            {machineOptions.map((opt, optIdx) => (
+                                <option key={`${p.id}-${mi}-opt-${optIdx}`} value={opt}>{opt}</option>
                             ))}
+                        </select>
+                        
+                        {/* 數量輸入 */}
+                        <input 
+                            type="number" 
+                            className="w-10 border border-blue-300 rounded text-center font-bold" 
+                            value={m.qty} 
+                            onChange={e => {
+                                const nm = p.machines.map((x, idx) => idx === mi ? {...x, qty: e.target.value} : x);
+                                setProjectPlans({...projectPlans, [currentProjectId]: currentPlans.map(x => x.id === p.id ? {...x, machines: nm} : x)});
+                            }}
+                        />
+                        
+                        {/* 刪除小按鈕 */}
+                        <button className="no-print text-red-500 font-bold px-1" onClick={()=>{
+                            const nm = p.machines.filter((_, idx) => idx !== mi);
+                            setProjectPlans({...projectPlans, [currentProjectId]: currentPlans.map(x => x.id === p.id ? {...x, machines: nm} : x)});
+                            setTimeout(() => syncToCloud(), 100);
+                        }}>✕</button>
+                    </div>
+                ))}
+            </div>
+
+            {/* 新增按鈕 */}
+            <button 
+                className="text-xs text-blue-600 font-bold mt-2 hover:underline no-print block w-full text-left" 
+                onClick={() => {
+                    const nm = [...(p.machines || []), { spec: machineOptions[0], qty: 1 }];
+                    setProjectPlans({...projectPlans, [currentProjectId]: currentPlans.map(x => x.id === p.id ? { ...x, machines: nm } : x)});
+                }}
+            >
+                +新增機具
+            </button>
+        </td>
+
+        {/* 6. 刪除整列按鈕 */}
+        <td className="border p-2 no-print">
+            <button className="text-red-500 font-bold" onClick={()=>{if(confirm("確定刪除此天序？")){setProjectPlans({...projectPlans,[currentProjectId]:currentPlans.filter(x=>x.id!==p.id)});syncToCloud();}}}>
+                刪除
+            </button>
+        </td>
+    </tr>
+))}
                         </tbody>
                         <tfoot className="bg-blue-900 text-white font-black">
                             <tr><td colSpan="2" className="p-2 text-right">預計合計：</td><td className="p-2">{estTotalLabor}</td><td className="p-2">{estTotalSupport}</td><td colSpan="2">共 {estTotalSum} 工</td></tr>
