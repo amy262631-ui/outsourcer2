@@ -200,19 +200,13 @@ function App() {
                             <tr><th className="border p-2">天序</th><th className="border p-2">內容</th><th className="border p-2">外包</th><th className="border p-2">何鑫</th><th className="border p-2">機具組合</th><th className="border p-2 no-print">操作</th></tr>
                         </thead>
                         <tbody>
-                            沒錯，就是這一段！但注意看您提供的內容，裡面出現了**「兩個 <td> 疊在一起」**的情況（這就是為什麼瀏覽器報錯 <td> cannot appear as a child of <td>）。
-
-為了讓您修復後能直接正常執行且不再報錯，我幫您把這段結構整理乾淨了。請將您代碼中整段 currentPlans.map 的內容替換成下面這份：
-
-修正後的乾淨版本 (直接複製替換)
-JavaScript
-
+                           
 {currentPlans.map((p, i) => (
     <tr key={p.id} className="text-center border-b">
         {/* 1. 天序 */}
         <td className="border p-2 font-bold">{i+1}</td>
         
-        {/* 2. 內容 */}
+        {/* 2. 預計內容 */}
         <td className="border p-2">
             <textarea 
                 className="w-full bg-transparent" 
@@ -223,7 +217,7 @@ JavaScript
             />
         </td>
         
-        {/* 3. 外包 */}
+        {/* 3. 外包工數 */}
         <td className="border p-2">
             <input 
                 type="number" 
@@ -234,7 +228,7 @@ JavaScript
             />
         </td>
         
-        {/* 4. 何鑫 */}
+        {/* 4. 何鑫工數 */}
         <td className="border p-2">
             <input 
                 type="number" 
@@ -245,18 +239,19 @@ JavaScript
             />
         </td>
 
-        {/* 5. 機具組合 (這是修正過的區塊) */}
+        {/* 5. 機具組合 (核心修正區塊) */}
         <td className="border p-2">
             <div className="flex flex-col gap-1">
                 {(p.machines || []).map((m, mi) => (
-                    <div key={`${p.id}-mach-${mi}`} className="flex items-center gap-1 bg-blue-50 p-1 rounded no-print-flex">
+                    <div key={`${p.id}-m-${mi}`} className="flex items-center gap-1 bg-blue-50 p-1 rounded no-print-flex text-sm">
                         {/* 規格選單 */}
                         <select 
-                            className="border border-blue-300 rounded text-sm font-bold bg-white px-1"
+                            className="border border-blue-300 rounded font-bold bg-white px-1"
                             value={m.spec}
                             onChange={e => {
                                 const nm = p.machines.map((x, idx) => idx === mi ? {...x, spec: e.target.value} : x);
-                                setProjectPlans({...projectPlans, [currentProjectId]: currentPlans.map(x => x.id === p.id ? {...x, machines: nm} : x)});
+                                const newPlans = currentPlans.map(x => x.id === p.id ? {...x, machines: nm} : x);
+                                setProjectPlans({...projectPlans, [currentProjectId]: newPlans});
                             }}
                         >
                             {machineOptions.map((opt, optIdx) => (
@@ -264,42 +259,45 @@ JavaScript
                             ))}
                         </select>
                         
-                        {/* 數量輸入 */}
+                        {/* 數量 */}
                         <input 
                             type="number" 
                             className="w-10 border border-blue-300 rounded text-center font-bold" 
                             value={m.qty} 
                             onChange={e => {
                                 const nm = p.machines.map((x, idx) => idx === mi ? {...x, qty: e.target.value} : x);
-                                setProjectPlans({...projectPlans, [currentProjectId]: currentPlans.map(x => x.id === p.id ? {...x, machines: nm} : x)});
+                                const newPlans = currentPlans.map(x => x.id === p.id ? {...x, machines: nm} : x);
+                                setProjectPlans({...projectPlans, [currentProjectId]: newPlans});
                             }}
                         />
                         
-                        {/* 刪除小按鈕 */}
-                        <button className="no-print text-red-500 font-bold px-1" onClick={()=>{
+                        {/* 刪除機具按鈕 */}
+                        <button className="no-print text-red-500 font-bold px-1" onClick={() => {
                             const nm = p.machines.filter((_, idx) => idx !== mi);
-                            setProjectPlans({...projectPlans, [currentProjectId]: currentPlans.map(x => x.id === p.id ? {...x, machines: nm} : x)});
+                            const newPlans = currentPlans.map(x => x.id === p.id ? {...x, machines: nm} : x);
+                            setProjectPlans({...projectPlans, [currentProjectId]: newPlans});
                             setTimeout(() => syncToCloud(), 100);
                         }}>✕</button>
                     </div>
                 ))}
             </div>
 
-            {/* 新增按鈕 */}
+            {/* 新增機具按鈕 */}
             <button 
                 className="text-xs text-blue-600 font-bold mt-2 hover:underline no-print block w-full text-left" 
                 onClick={() => {
                     const nm = [...(p.machines || []), { spec: machineOptions[0], qty: 1 }];
-                    setProjectPlans({...projectPlans, [currentProjectId]: currentPlans.map(x => x.id === p.id ? { ...x, machines: nm } : x)});
+                    const newPlans = currentPlans.map(x => x.id === p.id ? { ...x, machines: nm } : x);
+                    setProjectPlans({ ...projectPlans, [currentProjectId]: newPlans });
                 }}
             >
                 +新增機具
             </button>
         </td>
 
-        {/* 6. 刪除整列按鈕 */}
+        {/* 6. 刪除整列天序 */}
         <td className="border p-2 no-print">
-            <button className="text-red-500 font-bold" onClick={()=>{if(confirm("確定刪除此天序？")){setProjectPlans({...projectPlans,[currentProjectId]:currentPlans.filter(x=>x.id!==p.id)});syncToCloud();}}}>
+            <button className="text-red-500 font-bold hover:bg-red-50 px-2 py-1 rounded" onClick={()=>{if(confirm("確定刪除此天序？")){setProjectPlans({...projectPlans,[currentProjectId]:currentPlans.filter(x=>x.id!==p.id)});syncToCloud();}}}>
                 刪除
             </button>
         </td>
