@@ -208,7 +208,63 @@ function App() {
                                     <td className="border p-2"><input type="number" className="w-full text-center text-yellow-600 font-bold" value={p.support} onChange={e=>setProjectPlans({...projectPlans,[currentProjectId]:currentPlans.map(x=>x.id===p.id?{...x,support:e.target.value}:x)})} onBlur={()=>syncToCloud()}/></td>
                                     <td className="border p-2">
                                         {(p.machines || []).map((m, mi) => <div key={mi} className="text-sm">{m.spec}x{m.qty} <button className="no-print text-red-500" onClick={()=>{const nm=p.machines.filter((_,idx)=>idx!==mi);setProjectPlans({...projectPlans,[currentProjectId]:currentPlans.map(x=>x.id===p.id?{...x,machines:nm}:x)});syncToCloud();}}>✕</button></div>)}
-                                        <button className="text-xs text-blue-600 no-print" onClick={()=>{const nm=[...(p.machines||[]),{spec:machineOptions[0],qty:1}];setProjectPlans({...projectPlans,[currentProjectId]:currentPlans.map(x=>x.id===p.id?{...x,machines:nm}:x)})}}>+機具</button>
+                                        <td className="border p-2">
+    {(p.machines || []).map((m, mi) => (
+        <div key={mi} className="flex items-center gap-1 mb-2 bg-blue-50 p-1 rounded no-print-flex">
+            {/* 規格選單 */}
+            <select 
+                className="border border-blue-300 rounded text-sm font-bold bg-white"
+                value={m.spec}
+                onChange={e => {
+                    const nm = p.machines.map((x, idx) => idx === mi ? {...x, spec: e.target.value} : x);
+                    const newPlans = currentPlans.map(x => x.id === p.id ? {...x, machines: nm} : x);
+                    setProjectPlans({...projectPlans, [currentProjectId]: newPlans});
+                }}
+            >
+                {machineOptions.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+            </select>
+            
+            {/* 數量輸入 */}
+            <input 
+                type="number" 
+                className="w-12 border border-blue-300 rounded text-center font-bold" 
+                value={m.qty} 
+                onChange={e => {
+                    const nm = p.machines.map((x, idx) => idx === mi ? {...x, qty: e.target.value} : x);
+                    const newPlans = currentPlans.map(x => x.id === p.id ? {...x, machines: nm} : x);
+                    setProjectPlans({...projectPlans, [currentProjectId]: newPlans});
+                }}
+            />
+            <span className="text-xs">台</span>
+            
+            {/* 刪除按鈕 */}
+            <button className="no-print text-red-500 hover:text-red-700 ml-1" onClick={()=>{
+                const nm = p.machines.filter((_, idx) => idx !== mi);
+                const newPlans = currentPlans.map(x => x.id === p.id ? {...x, machines: nm} : x);
+                setProjectPlans({...projectPlans, [currentProjectId]: newPlans});
+                syncToCloud();
+            }}>✕</button>
+        </div>
+    ))}
+    
+    {/* 列印時顯示的純文字 (避免列印出下拉選單框) */}
+    <div className="hidden print:block">
+        {(p.machines || []).map((m, mi) => (
+            <div key={mi}>{m.spec} x {m.qty}台</div>
+        ))}
+    </div>
+
+    <button 
+        className="text-xs bg-blue-500 text-white px-2 py-1 rounded hover:bg-blue-600 no-print mt-1" 
+        onClick={() => {
+            const nm = [...(p.machines || []), { spec: machineOptions[0], qty: 1 }];
+            const newPlans = currentPlans.map(x => x.id === p.id ? { ...x, machines: nm } : x);
+            setProjectPlans({ ...projectPlans, [currentProjectId]: newPlans });
+        }}
+    >
+        + 新增機具
+    </button>
+</td>
                                     </td>
                                     <td className="border p-2 no-print"><button className="text-red-500 font-bold" onClick={()=>{setProjectPlans({...projectPlans,[currentProjectId]:currentPlans.filter(x=>x.id!==p.id)});syncToCloud();}}>刪除</button></td>
                                 </tr>
