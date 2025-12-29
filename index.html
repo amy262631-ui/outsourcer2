@@ -25,8 +25,9 @@
 const load = (k, f) => { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : f; } catch { return f; } };
 const save = (k, v) => localStorage.setItem(k, JSON.stringify(v));
 const sortMachines = (list) => [...new Set(list)].sort((a,b) => (parseInt(a.match(/\d+/))||0) - (parseInt(b.match(/\d+/))||0));
-// 強化 ID 產生器，徹底解決 Key 重複問題
-const generateId = () => `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+
+// 強化 ID 產生器，確保在極短時間內產生的 ID 也不會重複
+const generateId = () => `id-${Date.now()}-${Math.floor(Math.random() * 1000000)}`;
 
 function App() {
     const [projects, setProjects] = React.useState(load("projects", []));
@@ -44,7 +45,7 @@ function App() {
     const GAS_URL = "https://script.google.com/macros/s/AKfycbzc7eXQObf5fkZ4iqje4_I4U3avG9fveDJe3UumMuaH5v0uSo8M75w_e_IbdRiuHtqPSg/exec";
 
     const currentProject = projects.find(p => p.id === currentProjectId);
-    const currentPlans = projectPlans[currentProjectId] || [];
+    const currentPlans = (projectPlans[currentProjectId] || []).map(p => ({ ...p, id: p.id || generateId() }));
     const isCompleted = projectStatus[currentProjectId] || false;
 
     const projectRecords = records.filter(r => r.projectId === currentProjectId && r.company === currentCompany);
@@ -80,7 +81,13 @@ function App() {
                 cloud.plans.forEach((p, idx) => {
                     const pId = projects.find(proj => proj.name === p["工程名稱"])?.id || p["工程名稱"];
                     if (!map[pId]) map[pId] = [];
-                    map[pId].push({ id: generateId() + idx, task: p["預計工作內容"], labor: p["外包"], support: p["何鑫"], machines: JSON.parse(p["機具組合"] || "[]") });
+                    map[pId].push({ 
+                        id: `cloud-${Date.now()}-${idx}-${Math.random()}`, 
+                        task: p["預計工作內容"], 
+                        labor: p["外包"], 
+                        support: p["何鑫"], 
+                        machines: JSON.parse(p["機具組合"] || "[]") 
+                    });
                 });
                 setProjectPlans(map);
             }
@@ -197,7 +204,7 @@ function App() {
                         </thead>
                         <tbody>
                             {currentPlans.map((p, i) => (
-                                <tr key={p.id} className="text-center border-b">
+                                <tr key={`row-${p.id}`} className="text-center border-b">
                                     <td className="border p-2 font-bold">{i+1}</td>
                                     <td className="border p-2">
                                         <textarea className="w-full bg-transparent" rows="1" value={p.task} onChange={e=>setProjectPlans({...projectPlans,[currentProjectId]:currentPlans.map(x=>x.id===p.id?{...x,task:e.target.value}:x)})} onBlur={()=>syncToCloud()}/>
@@ -211,7 +218,7 @@ function App() {
                                     <td className="border p-2">
                                         <div className="flex flex-col gap-1">
                                             {(p.machines || []).map((m, mi) => (
-                                                <div key={`${p.id}-mach-${mi}`} className="flex items-center gap-1 bg-blue-50 p-1 rounded no-print-flex">
+                                                <div key={`mach-${p.id}-${mi}`} className="flex items-center gap-1 bg-blue-50 p-1 rounded no-print-flex">
                                                     <select 
                                                         className="border border-blue-300 rounded font-bold bg-white text-sm"
                                                         value={m.spec}
@@ -274,7 +281,7 @@ function App() {
                         </thead>
                         <tbody>
                             {Object.entries(dailyDetails).sort((a,b)=>a[0].localeCompare(b[0])).map(([date, data]) => (
-                                <tr key={date} className="hover:bg-green-50 border-b">
+                                <tr key={`act-${date}`} className="hover:bg-green-50 border-b">
                                     <td className="border p-4 font-bold">{date}</td>
                                     <td className="border p-4 font-black text-blue-800">{data.labor}</td>
                                     <td className="border p-4 font-black text-orange-600">{data.support}</td>
