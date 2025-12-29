@@ -218,9 +218,9 @@ function App() {
                                                             setProjectPlans({...projectPlans, [currentProjectId]: currentPlans.map(x => x.id === p.id ? {...x, machines: nm} : x)});
                                                         }}
                                                     >
-                                                        {machineOptions.map((opt, optIdx) => (
-                                                            <option key={`opt-${p.id}-${mi}-${optIdx}`} value={opt}>{opt}</option>
-                                                        ))}
+                                                        {machineOptions.map((opt, i) => (
+    <option key={`opt-${i}`} value={opt}>{opt}</option>
+))}
                                                     </select>
                                                     <input 
                                                         type="number" 
