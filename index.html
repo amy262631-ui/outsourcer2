@@ -230,15 +230,21 @@ function App() {
                                             {(p.machines || []).map((m, mi) => (
                                                 <div key={`${p.id}-m-${mi}`} className="flex items-center gap-1 bg-blue-50 p-1 rounded no-print-flex text-sm">
                                                     <select 
-                                                        className="border border-blue-300 rounded font-bold bg-white"
-                                                        value={m.spec}
-                                                        onChange={e => {
-                                                            const nm = p.machines.map((x, idx) => idx === mi ? {...x, spec: e.target.value} : x);
-                                                            setProjectPlans({...projectPlans, [currentProjectId]: currentPlans.map(x => x.id === p.id ? {...x, machines: nm} : x)});
-                                                        }}
-                                                    >
-                                                        {machineOptions.map((opt, oIdx) => <option key={`${p.id}-${mi}-${oIdx}`} value={opt}>{opt}</option>)}
-                                                    </select>
+    className="border border-blue-300 rounded font-bold bg-white px-1"
+    value={m.spec}
+    onChange={e => {
+        const nm = p.machines.map((x, idx) => idx === mi ? {...x, spec: e.target.value} : x);
+        const newPlans = currentPlans.map(x => x.id === p.id ? {...x, machines: nm} : x);
+        setProjectPlans({...projectPlans, [currentProjectId]: newPlans});
+    }}
+>
+    {machineOptions.map((opt, optIdx) => (
+        /* 使用機具名稱加上索引，確保在下拉選單內絕對不重複 */
+        <option key={`opt-${p.id}-${mi}-${optIdx}`} value={opt}>
+            {opt}
+        </option>
+    ))}
+</select>
                                                     <input 
                                                         type="number" 
                                                         className="w-10 border border-blue-300 rounded text-center font-bold" 
