@@ -111,25 +111,31 @@ function App() {
                 setProjectPlans(planMap);
             }
 
-            // 4. 處理實際紀錄 (關鍵修正：透過名稱匹配 ID)
-            if (cloud.records) {
-                const actRecords = cloud.records.map((r, idx) => {
-                    const matchedProj = newProjects.find(p => p.name === r["工程名稱"]);
-                    return {
-                        id: `act-${Date.now()}-${idx}`,
-                        projectId: matchedProj ? matchedProj.id : r["工程名稱"],
-                        company: r["公司"],
-                        date: r["日期"],
-                        type: r["分類"],
-                        labor: Number(r["外包"] || 0),
-                        support: Number(r["何鑫"] || 0),
-                        spec: r["規格"] || "",
-                        hr: Number(r["時數"] || 0),
-                        note: r["備註"] || ""
-                    };
-                });
-                setRecords(actRecords);
-            }
+           // 4. 處理實際紀錄 (關鍵修正：強制截斷日期字串)
+if (cloud.records) {
+    const actRecords = cloud.records.map((r, idx) => {
+        const matchedProj = newProjects.find(p => p.name === r["工程名稱"]);
+        
+        // --- 修正日期顯示格式 ---
+        let rawDate = r["日期"] || "";
+        // 如果日期很長 (包含 T 或 空格)，只取前 10 碼 YYYY-MM-DD
+        const formattedDate = rawDate.length > 10 ? rawDate.substring(0, 10) : rawDate;
+
+        return {
+            id: `act-${Date.now()}-${idx}`,
+            projectId: matchedProj ? matchedProj.id : r["工程名稱"],
+            company: r["公司"],
+            date: formattedDate, // 使用修正後的日期
+            type: r["分類"],
+            labor: Number(r["外包"] || 0),
+            support: Number(r["何鑫"] || 0),
+            spec: r["規格"] || "",
+            hr: Number(r["時數"] || 0),
+            note: r["備註"] || ""
+        };
+    });
+    setRecords(actRecords);
+}
 
             const time = new Date().toLocaleTimeString();
             setSyncStatus({ loading: false, lastTime: time });
