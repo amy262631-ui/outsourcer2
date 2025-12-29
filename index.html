@@ -69,16 +69,16 @@ function App() {
     const estTotalSum = estTotalLabor + estTotalSupport;
 
     // 同步功能
-    const downloadFromCloud = async () => {
+   const downloadFromCloud = async () => {
         setSyncStatus(prev => ({ ...prev, loading: true }));
         try {
             const response = await fetch(`${GAS_URL}?t=${Date.now()}`, { method: "GET" });
             const cloud = await response.json();
             
-            // 1. 先抓出最新的工程清單 (這很重要)
+            // 1. 更新工程清單
             const newProjects = cloud.projects ? cloud.projects.map(p => ({ 
-                id: String(p["工程ID"]), 
-                name: String(p["工程名稱"]) 
+                id: String(p["工程ID"] || "id-" + Math.random()), 
+                name: String(p["工程名稱"] || "未命名工程") 
             })) : [];
             setProjects(newProjects);
 
@@ -87,27 +87,36 @@ function App() {
                 setMachineOptions(sortMachines(cloud.equipments.map(e => e["機具名稱"])));
             }
 
-            // 3. 處理規劃內容 (使用剛抓到的 newProjects 來比對)
+            // 3. 處理規劃內容 (強化容錯與匹配)
             if (cloud.plans) {
                 const map = {};
                 cloud.plans.forEach((p, idx) => {
-                    // 改用 newProjects 比對名稱來找 ID
+                    // 比對工程名稱找 ID，找不到就用名稱當 Key
                     const matchedProj = newProjects.find(proj => proj.name === p["工程名稱"]);
                     const targetKey = matchedProj ? matchedProj.id : p["工程名稱"];
                     
                     if (!map[targetKey]) map[targetKey] = [];
                     
-                    try {
-                        map[targetKey].push({ 
-                            id: `cloud-${idx}-${Date.now()}-${Math.random()}`, 
-                            task: p["預計工作內容"] || "", 
-                            labor: Number(p["外包"] || 0), 
-                            support: Number(p["何鑫"] || 0), 
-                            machines: p["機具組合"] ? JSON.parse(p["機具組合"]) : []
-                        });
-                    } catch (err) {
-                        console.error("解析機具 JSON 失敗:", p["機具組合"]);
+                    // --- 強化：解析機具 JSON (防止抓到日期字串) ---
+                    let parsedMachines = [];
+                    const rawMachines = p["機具組合"];
+                    
+                    if (rawMachines && typeof rawMachines === 'string' && rawMachines.startsWith('[')) {
+                        try {
+                            parsedMachines = JSON.parse(rawMachines);
+                        } catch (e) {
+                            console.warn("機具格式解析失敗，已設為空值:", rawMachines);
+                            parsedMachines = [];
+                        }
                     }
+
+                    map[targetKey].push({ 
+                        id: `cloud-${Date.now()}-${idx}-${Math.random()}`, 
+                        task: p["預計工作內容"] || "", 
+                        labor: Number(p["外包"] || 0), 
+                        support: Number(p["何鑫"] || 0), 
+                        machines: parsedMachines
+                    });
                 });
                 setProjectPlans(map);
             }
@@ -117,8 +126,8 @@ function App() {
             save("lastSyncTime", time);
             alert("📥 雲端同步成功！");
         } catch (e) { 
-            console.error("同步報錯:", e);
-            alert("同步失敗，請檢查網路或 GAS 網址"); 
+            console.error("同步報錯詳情:", e);
+            alert("同步失敗：雲端資料格式不正確，請檢查試算表欄位順序。"); 
             setSyncStatus(prev => ({ ...prev, loading: false })); 
         }
     };
