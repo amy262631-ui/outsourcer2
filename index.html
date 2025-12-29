@@ -25,6 +25,8 @@
 const load = (k, f) => { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : f; } catch { return f; } };
 const save = (k, v) => localStorage.setItem(k, JSON.stringify(v));
 const sortMachines = (list) => [...new Set(list)].sort((a,b) => (parseInt(a.match(/\d+/))||0) - (parseInt(b.match(/\d+/))||0));
+// 強化 ID 產生器，徹底解決 Key 重複問題
+const generateId = () => `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
 
 function App() {
     const [projects, setProjects] = React.useState(load("projects", []));
@@ -69,16 +71,16 @@ function App() {
     const downloadFromCloud = async () => {
         setSyncStatus(prev => ({ ...prev, loading: true }));
         try {
-            const response = await fetch(GAS_);
+            const response = await fetch(GAS_URL);
             const cloud = await response.json();
             if (cloud.projects) setProjects(cloud.projects.map(p => ({ id: String(p["工程ID"]), name: p["工程名稱"] })));
             if (cloud.equipments) setMachineOptions(sortMachines(cloud.equipments.map(e => e["機具名稱"])));
             if (cloud.plans) {
                 const map = {};
-                cloud.plans.forEach(p => {
+                cloud.plans.forEach((p, idx) => {
                     const pId = projects.find(proj => proj.name === p["工程名稱"])?.id || p["工程名稱"];
                     if (!map[pId]) map[pId] = [];
-                    map[pId].push({ id: Math.random(), task: p["預計工作內容"], labor: p["外包"], support: p["何鑫"], machines: JSON.parse(p["機具組合"] || "[]") });
+                    map[pId].push({ id: generateId() + idx, task: p["預計工作內容"], labor: p["外包"], support: p["何鑫"], machines: JSON.parse(p["機具組合"] || "[]") });
                 });
                 setProjectPlans(map);
             }
@@ -171,7 +173,7 @@ function App() {
                     <option value="">選擇工程</option>
                     {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                 </select>
-                <button className="bg-blue-600 text-white px-4 py-2 rounded font-bold" onClick={()=>{const n=prompt("名稱");if(n){const nl=[...projects,{id:Date.now().toString(),name:n}];setProjects(nl);setTimeout(()=>syncToCloud({projects:nl, equipments:machineOptions}),500)}}}>+ 新增工程</button>
+                <button className="bg-blue-600 text-white px-4 py-2 rounded font-bold" onClick={()=>{const n=prompt("名稱");if(n){const nid=generateId();const nl=[...projects,{id:nid,name:n}];setProjects(nl);setTimeout(()=>syncToCloud({projects:nl, equipments:machineOptions}),500)}}}>+ 新增工程</button>
                 <button className="bg-green-700 text-white px-4 py-2 rounded font-bold" onClick={exportToExcel}>📊 Excel</button>
                 <button className="bg-blue-800 text-white px-4 py-2 rounded font-bold" onClick={exportToWord}>📝 Word</button>
                 <button className="bg-slate-700 text-white px-4 py-2 rounded font-bold" onClick={()=>setModalType("manageMachines")}>⚙️ 機具庫</button>
@@ -209,7 +211,7 @@ function App() {
                                     <td className="border p-2">
                                         <div className="flex flex-col gap-1">
                                             {(p.machines || []).map((m, mi) => (
-                                                <div key={`${p.id}-m-${mi}`} className="flex items-center gap-1 bg-blue-50 p-1 rounded no-print-flex">
+                                                <div key={`${p.id}-mach-${mi}`} className="flex items-center gap-1 bg-blue-50 p-1 rounded no-print-flex">
                                                     <select 
                                                         className="border border-blue-300 rounded font-bold bg-white text-sm"
                                                         value={m.spec}
@@ -218,9 +220,9 @@ function App() {
                                                             setProjectPlans({...projectPlans, [currentProjectId]: currentPlans.map(x => x.id === p.id ? {...x, machines: nm} : x)});
                                                         }}
                                                     >
-                                                        {machineOptions.map((opt, i) => (
-    <option key={`opt-${i}`} value={opt}>{opt}</option>
-))}
+                                                        {machineOptions.map((opt, optIdx) => (
+                                                            <option key={`opt-${p.id}-${mi}-${optIdx}`} value={opt}>{opt}</option>
+                                                        ))}
                                                     </select>
                                                     <input 
                                                         type="number" 
@@ -238,9 +240,8 @@ function App() {
                                                     }}>✕</button>
                                                 </div>
                                             ))}
-                                            {/* 列印時顯示的純文字 */}
                                             <div className="hidden print:block text-sm">
-                                                {(p.machines || []).map((m, mi) => <div key={`p-${mi}`}>{m.spec}x{m.qty}</div>)}
+                                                {(p.machines || []).map((m, mi) => <div key={`prt-${p.id}-${mi}`}>{m.spec}x{m.qty}</div>)}
                                             </div>
                                             <button className="text-xs text-blue-600 font-bold mt-2 hover:underline no-print text-left" onClick={() => {
                                                 const nm = [...(p.machines || []), { spec: machineOptions[0], qty: 1 }];
@@ -258,7 +259,7 @@ function App() {
                             <tr><td colSpan="2" className="p-2 text-right">預計合計：</td><td className="p-2">{estTotalLabor}</td><td className="p-2">{estTotalSupport}</td><td colSpan="2">共 {estTotalSum} 工</td></tr>
                         </tfoot>
                     </table>
-                    <button className="no-print mt-4 bg-blue-100 p-2 rounded font-bold" onClick={()=>setProjectPlans({...projectPlans,[currentProjectId]:[...currentPlans,{id:Date.now(),task:"",labor:0,support:0,machines:[]}]})}>+ 新增天序</button>
+                    <button className="no-print mt-4 bg-blue-100 p-2 rounded font-bold" onClick={()=>setProjectPlans({...projectPlans,[currentProjectId]:[...currentPlans,{id:generateId(),task:"",labor:0,support:0,machines:[]}]})}>+ 新增天序</button>
                 </div>
 
                 {/* 2. 實際執行 */}
@@ -365,8 +366,8 @@ function App() {
                         <textarea className="border-2 p-3 w-full rounded h-24 mb-6" placeholder="記事..." value={entryForm.note} onChange={e=>setEntryForm({...entryForm,note:e.target.value})}/>
                         <div className="flex gap-4">
                             <button className="bg-green-700 text-white flex-1 py-5 rounded-2xl font-black text-2xl" onClick={() => {
-                                const nr = [...records, { projectId: currentProjectId, company: currentCompany, date: entryForm.date, id: Date.now(), type: "labor", labor: Number(entryForm.labor), support: Number(entryForm.support), note: entryForm.note }];
-                                entryForm.machines.forEach(m => { nr.push({ projectId: currentProjectId, company: currentCompany, date: entryForm.date, id: Date.now() + Math.random(), type: "crane", spec: m.spec, hr: Number(m.hr) }); });
+                                const nr = [...records, { projectId: currentProjectId, company: currentCompany, date: entryForm.date, id: generateId(), type: "labor", labor: Number(entryForm.labor), support: Number(entryForm.support), note: entryForm.note }];
+                                entryForm.machines.forEach(m => { nr.push({ projectId: currentProjectId, company: currentCompany, date: entryForm.date, id: generateId(), type: "crane", spec: m.spec, hr: Number(m.hr) }); });
                                 setRecords(nr); setModalType("");
                                 setTimeout(() => syncToCloud({ company: currentCompany, projectName: currentProject?.name, records: nr.filter(r => r.projectId === currentProjectId), plans: currentPlans, equipments: machineOptions, projects: projects }), 500);
                             }}>儲存並同步</button>
