@@ -234,15 +234,12 @@ function App() {
     value={m.spec}
     onChange={e => {
         const nm = p.machines.map((x, idx) => idx === mi ? {...x, spec: e.target.value} : x);
-        const newPlans = currentPlans.map(x => x.id === p.id ? {...x, machines: nm} : x);
-        setProjectPlans({...projectPlans, [currentProjectId]: newPlans});
+        setProjectPlans({...projectPlans, [currentProjectId]: currentPlans.map(x => x.id === p.id ? {...x, machines: nm} : x)});
     }}
 >
-    {machineOptions.map((opt, optIdx) => (
-        /* 使用機具名稱加上索引，確保在下拉選單內絕對不重複 */
-        <option key={`opt-${p.id}-${mi}-${optIdx}`} value={opt}>
-            {opt}
-        </option>
+    {/* 這裡的 key 改用索引 i，確保絕對不重複 */}
+    {machineOptions.map((opt, i) => (
+        <option key={`opt-${i}`} value={opt}>{opt}</option>
     ))}
 </select>
                                                     <input 
