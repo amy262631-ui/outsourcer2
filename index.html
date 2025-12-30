@@ -48,7 +48,15 @@ const load = (k, f) => { try { const v = localStorage.getItem(k); return v ? JSO
 const save = (k, v) => localStorage.setItem(k, JSON.stringify(v));
 const sortMachines = (list) => [...new Set(list)].sort((a,b) => (parseInt(a.match(/\d+/))||0) - (parseInt(b.match(/\d+/))||0));
 const generateId = () => `id-${Date.now()}-${Math.floor(Math.random() * 1000000)}`;
-
+// --- 新增：取得 yymmdd 格式的日期 ---
+const getShortDate = () => {
+    const d = new Date();
+    const yy = d.getFullYear().toString().slice(-2); // 取 2025 的最後兩位 25
+    const mm = (d.getMonth() + 1).toString().padStart(2, '0'); // 月份補零
+    const dd = d.getDate().toString().padStart(2, '0'); // 日期補零
+    return `${yy}${mm}${dd}`;
+};
+        
 function App() {
     const [projects, setProjects] = React.useState(load("projects", []));
     const [currentProjectId, setCurrentProjectId] = React.useState(load("currentProjectId", ""));
@@ -144,26 +152,53 @@ function App() {
         } catch (e) { alert("讀取失敗"); setSyncStatus(prev => ({ ...prev, loading: false })); }
     };
 
-    const exportToExcel = () => {
-        if (!currentProject) return alert("請選擇工程");
-        const wb = XLSX.utils.book_new();
-        const pData = [["天序", "預計內容", "外包", "何鑫", "機具組合"]];
-        currentPlans.forEach((p, i) => pData.push([i+1, p.task, p.labor, p.support, (p.machines||[]).map(m=>`${m.spec}x${m.qty}`).join(',')]));
-        XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(pData), "預估規劃");
-        const aData = [["日期", "外包", "何鑫", "機具", "記事"]];
-        Object.entries(dailyDetails).sort((a,b)=>a[0].localeCompare(b[0])).forEach(([date, d]) => aData.push([date, d.labor, d.support, d.machines.join(','), d.notes.join('/')]));
-        XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(aData), "實際執行");
-        XLSX.writeFile(wb, `${currentProject.name}-報表.xlsx`);
-    };
+    // --- 修改 Excel 匯出檔名 ---
+const exportToExcel = () => {
+    if (!currentProject) return alert("請先選擇工程");
+    const fileName = `${getShortDate()}-${currentProject.name}-安裝分析表.xlsx`;
+    const wb = XLSX.utils.book_new();
+    const pData = [["天序", "預計內容", "外包", "何鑫", "機具組合"]];
+    currentPlans.forEach((p, i) => pData.push([i+1, p.task, p.labor, p.support, (p.machines||[]).map(m=>`${m.spec}x${m.qty}`).join(',')]));
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(pData), "預估規劃");
+    const aData = [["日期", "外包", "何鑫", "機具", "記事"]];
+    Object.entries(dailyDetails).sort((a,b)=>a[0].localeCompare(b[0])).forEach(([date, d]) => aData.push([date, d.labor, d.support, d.machines.join(','), d.notes.join('/')]));
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(aData), "實際執行");
+    XLSX.writeFile(wb, fileName);
+};
 
-    const exportToWord = () => {
-        const content = document.getElementById('export-area').innerHTML;
-        const header = `<html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'><head><meta charset='utf-8'><style>table{border-collapse:collapse;width:100%;} th,td{border:1px solid black;padding:5px;text-align:center;}</style></head><body>${content}</body></html>`;
-        const link = document.createElement('a');
-        link.href = URL.createObjectURL(new Blob(['\ufeff', header], { type: 'application/msword' }));
-        link.download = `${currentProject?.name}-報表.doc`;
-        link.click();
-    };
+// --- 修改 Word 匯出檔名 ---
+const exportToWord = () => {
+    if (!currentProject) return alert("請先選擇工程");
+    const fileName = `${getShortDate()}-${currentProject.name}-安裝分析表.doc`;
+    const content = document.getElementById('export-area').innerHTML;
+    const header = `<html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'><head><meta charset='utf-8'><style>table{border-collapse:collapse;width:100%;} th,td{border:1px solid black;padding:5px;text-align:center;}</style></head><body>${content}</body></html>`;
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(new Blob(['\ufeff', header], { type: 'application/msword' }));
+    link.download = fileName;
+    link.click();
+};
+    // --- 修改 PDF / 列印 處理邏輯 ---
+const handlePrint = () => {
+    if (!currentProject) {
+        alert("請先選擇工程案再執行輸出");
+        return;
+    }
+    
+    // 儲存原始標題
+    const originalTitle = document.title;
+    
+    // 關鍵設定：強制修改 document.title，瀏覽器會將此標題作為 PDF 的預設檔名
+    const fileName = `${getShortDate()}-${currentProject.name}-安裝分析表`;
+    document.title = fileName;
+    
+    // 觸發瀏覽器列印視窗
+    window.print();
+    
+    // 印完後恢復原標題，避免影響網頁標籤顯示
+    setTimeout(() => {
+        document.title = originalTitle;
+    }, 1000);
+};
 
     const pieRef = React.useRef(null);
     const chartRef = React.useRef(null);
@@ -243,6 +278,8 @@ function App() {
 <button className="bg-green-700 text-white px-4 py-2 rounded font-bold" onClick={exportToExcel}>📊 Excel</button>
 <button className="bg-blue-800 text-white px-4 py-2 rounded font-bold" onClick={exportToWord}>📝 Word</button>
 <button className="bg-slate-700 text-white px-4 py-2 rounded font-bold" onClick={()=>setModalType("manageMachines")}>⚙️ 機具庫</button>
+{/* 修改後的按鈕組 */}
+<button className="bg-gray-700 text-white px-4 py-2 rounded font-bold" onClick={handlePrint}>📄 轉 PDF</button>            
 <button className="bg-gray-800 text-white px-6 py-2 rounded ml-auto font-bold" onClick={()=>window.print()}>🖨️ 列印</button>
             </div>
 
