@@ -238,147 +238,234 @@ function App() {
                     <button className="no-print mt-4 bg-blue-100 p-2 rounded font-bold shadow-sm" onClick={()=>{const nl=[...currentPlans,{id:generateId(),task:"",labor:0,support:0,machines:[]}];setProjectPlans({...projectPlans,[currentProjectId]:nl});setTimeout(()=>syncToCloud({plans:nl}),500);}}>+ 新增天序</button>
                 </div>
 
-                {/* 2. 實際執行 */}
-                <div className="bg-white p-6 rounded-xl shadow mb-8 border-t-8 border-green-700 print-section">
-                    <h2 className="text-2xl font-black text-green-800 mb-4 flex justify-between items-center">
-                        <span>📅 實際明細 - {currentProject?.name} ({currentCompany})</span>
-                        <button className="no-print bg-green-600 text-white px-6 py-2 rounded font-bold shadow" onClick={()=>setModalType("entry")}>📝 登打紀錄</button>
-                    </h2>
-                    <table className="w-full border-collapse text-center actual-detail-table">
-                        <thead className="table-header-darkblue">
-                            <tr><th className="border p-4">日期</th><th className="border p-4">外包</th><th className="border p-4">何鑫</th><th className="border p-4">機具</th><th className="border p-4">記事</th><th className="border p-4 no-print">操作</th></tr>
-                        </thead>
-                        <tbody>
-    {Object.entries(dailyDetails).sort((a,b)=>a[0].localeCompare(b[0])).map(([date, data]) => (
-        <tr key={date} className="hover:bg-green-50 border-b">
-            <td className="border p-4 font-bold">{date}</td>
-            {/* 編輯外包工數 */}
-            <td className="border p-4">
-                <input 
-                    type="number" 
-                    className="w-full text-center font-black text-blue-800 bg-transparent" 
-                    value={data.labor} 
-                    onChange={e => {
-                        const val = Number(e.target.value);
-                        const nr = records.map(r => (r.projectId === currentProjectId && r.date === date && r.type === "labor") ? {...r, labor: val} : r);
-                        setRecords(nr);
-                    }}
-                    onBlur={() => syncToCloud()}
-                />
-            </td>
-            {/* 編輯何鑫工數 */}
-            <td className="border p-4">
-                <input 
-                    type="number" 
-                    className="w-full text-center font-black text-orange-600 bg-transparent" 
-                    value={data.support} 
-                    onChange={e => {
-                        const val = Number(e.target.value);
-                        const nr = records.map(r => (r.projectId === currentProjectId && r.date === date && r.type === "labor") ? {...r, support: val} : r);
-                        setRecords(nr);
-                    }}
-                    onBlur={() => syncToCloud()}
-                />
-            </td>
-            {/* 編輯機具組合 */}
-            <td className="border p-4">
-                <div className="flex flex-col gap-1">
-                    {data.raw.filter(r => r.type === "crane").map((m, mi) => (
-                        <div key={`${date}-m-${mi}`} className="flex items-center gap-1 bg-blue-50 p-1 rounded no-print-flex text-sm">
-                            <select 
-                                className="border rounded font-bold bg-white" 
-                                value={m.spec} 
-                                onChange={e => {
-                                    const nr = records.map(r => r.id === m.id ? {...r, spec: e.target.value} : r);
-                                    setRecords(nr);
-                                    setTimeout(() => syncToCloud({records: nr.filter(x => x.projectId === currentProjectId)}), 200);
-                                }}
-                            >
-                                {machineOptions.map((opt, oi)=><option key={`o-${oi}`} value={opt}>{opt}</option>)}
-                            </select>
-                            <input 
-                                type="number" 
-                                className="w-12 border rounded text-center font-bold" 
-                                value={m.hr} 
-                                onChange={e => {
-                                    const nr = records.map(r => r.id === m.id ? {...r, hr: Number(e.target.value)} : r);
-                                    setRecords(nr);
-                                }}
-                                onBlur={() => syncToCloud()}
-                            />
-                            <button className="text-red-500 font-bold px-1" onClick={() => {
-                                const nr = records.filter(r => r.id !== m.id);
+                {/* 2. 實際明細 - 局部覆蓋代碼 */}
+<div className="bg-white p-6 rounded-xl shadow mb-8 border-t-8 border-green-700 print-section">
+    <h2 className="text-2xl font-black text-green-800 mb-4 flex justify-between items-center">
+        <span>📅 實際明細 - {currentProject?.name} ({currentCompany})</span>
+        <button className="no-print bg-green-600 text-white px-6 py-2 rounded font-bold shadow" onClick={()=>setModalType("entry")}>📝 登打紀錄</button>
+    </h2>
+    <table className="w-full border-collapse text-center actual-detail-table" style={{ tableLayout: 'fixed' }}>
+        <thead className="table-header-darkblue">
+            <tr>
+                <th style={{ width: '18%' }} className="border p-2">日期</th>
+                <th style={{ width: '8%' }} className="border p-2">外包</th>
+                <th style={{ width: '8%' }} className="border p-2">何鑫</th>
+                <th style={{ width: '25%' }} className="border p-2">機具編輯</th>
+                <th style={{ width: '31%' }} className="border p-2">記事備註</th>
+                <th style={{ width: '10%' }} className="border p-2 no-print">操作</th>
+            </tr>
+        </thead>
+        <tbody>
+            {Object.entries(dailyDetails).sort((a,b)=>a[0].localeCompare(b[0])).map(([date, data]) => (
+                <tr key={date} className="hover:bg-green-50 border-b">
+                    {/* 日期欄位 - 加寬顯示 */}
+                    <td className="border p-2 font-bold text-xl">{date}</td>
+                    
+                    {/* 外包 - 窄欄位 */}
+                    <td className="border p-2">
+                        <input 
+                            type="number" 
+                            className="w-full text-center font-black text-blue-800 bg-transparent outline-none focus:border-b-2 focus:border-blue-500" 
+                            value={data.labor} 
+                            onChange={e => {
+                                const nr = records.map(r => (r.projectId === currentProjectId && r.date === date && r.type === "labor") ? {...r, labor: Number(e.target.value)} : r);
+                                setRecords(nr);
+                            }}
+                            onBlur={() => syncToCloud()}
+                        />
+                    </td>
+
+                    {/* 何鑫 - 窄欄位 */}
+                    <td className="border p-2">
+                        <input 
+                            type="number" 
+                            className="w-full text-center font-black text-orange-600 bg-transparent outline-none focus:border-b-2 focus:border-orange-500" 
+                            value={data.support} 
+                            onChange={e => {
+                                const nr = records.map(r => (r.projectId === currentProjectId && r.date === date && r.type === "labor") ? {...r, support: Number(e.target.value)} : r);
+                                setRecords(nr);
+                            }}
+                            onBlur={() => syncToCloud()}
+                        />
+                    </td>
+
+                    {/* 機具編輯 */}
+                    <td className="border p-2 text-left">
+                        <div className="flex flex-col gap-1">
+                            {data.raw.filter(r => r.type === "crane").map((m, mi) => (
+                                <div key={m.id || mi} className="flex items-center gap-1 bg-blue-50 p-1 rounded no-print-flex">
+                                    <select 
+                                        className="border rounded font-bold bg-white text-xs flex-1" 
+                                        value={m.spec} 
+                                        onChange={e => {
+                                            const nr = records.map(r => r.id === m.id ? {...r, spec: e.target.value} : r);
+                                            setRecords(nr);
+                                            setTimeout(() => syncToCloud({records: nr.filter(x => x.projectId === currentProjectId)}), 200);
+                                        }}
+                                    >
+                                        {machineOptions.map((opt, oi)=><option key={oi} value={opt}>{opt}</option>)}
+                                    </select>
+                                    <input 
+                                        type="number" 
+                                        className="w-10 border rounded text-center font-bold text-xs" 
+                                        value={m.hr} 
+                                        onChange={e => {
+                                            const nr = records.map(r => r.id === m.id ? {...r, hr: Number(e.target.value)} : r);
+                                            setRecords(nr);
+                                        }}
+                                        onBlur={() => syncToCloud()}
+                                    />
+                                    <button className="text-red-500 font-bold px-1" onClick={() => {
+                                        const nr = records.filter(r => r.id !== m.id);
+                                        setRecords(nr);
+                                        setTimeout(() => syncToCloud({records: nr.filter(x => x.projectId === currentProjectId)}), 200);
+                                    }}>✕</button>
+                                </div>
+                            ))}
+                            <button className="text-xs text-blue-600 font-bold no-print underline" onClick={() => {
+                                const nr = [...records, { id: generateId(), projectId: currentProjectId, company: currentCompany, date: date, type: "crane", spec: machineOptions[0], hr: 8 }];
                                 setRecords(nr);
                                 setTimeout(() => syncToCloud({records: nr.filter(x => x.projectId === currentProjectId)}), 200);
-                            }}>✕</button>
+                            }}>+增機具</button>
                         </div>
-                    ))}
-                    <button className="text-xs text-blue-600 font-bold mt-1 no-print underline" onClick={() => {
-                        const newMachine = { id: generateId(), projectId: currentProjectId, company: currentCompany, date: date, type: "crane", spec: machineOptions[0], hr: 8 };
-                        const nr = [...records, newMachine];
-                        setRecords(nr);
-                        setTimeout(() => syncToCloud({records: nr.filter(x => x.projectId === currentProjectId)}), 200);
-                    }}>+增機具</button>
-                </div>
-            </td>
-            <td className="border p-4 italic text-gray-600">
-                <textarea 
-                    className="w-full bg-transparent p-1 text-lg" 
-                    rows="1" 
-                    value={data.notes.join('/')} 
-                    onChange={e => {
-                        const val = e.target.value;
-                        const nr = records.map(r => (r.projectId === currentProjectId && r.date === date && r.type === "labor") ? {...r, note: val} : r);
-                        setRecords(nr);
-                    }}
-                    onBlur={() => syncToCloud()}
-                />
-            </td>
-            <td className="border p-4 no-print">
-                <button className="text-red-500 font-bold hover:bg-red-50 px-2 rounded" onClick={()=>{
-                    if(confirm("刪除此日期全部紀錄？")){
-                        const nr = records.filter(r => !(r.projectId === currentProjectId && r.date === date));
-                        setRecords(nr);
-                        setTimeout(() => syncToCloud({records: nr.filter(x => x.projectId === currentProjectId)}), 500);
-                    }
-                }}>刪除</button>
-            </td>
-        </tr>
-    ))}
-</tbody>
-                        <tfoot className="bg-green-800 text-white font-black">
-                            <tr><td className="p-4 text-right">實際合計：</td><td>{actTotalLabor}</td><td>{actTotalSupport}</td><td colSpan="3" className="text-right pr-10">共 {actTotalSum} 工</td></tr>
-                        </tfoot>
-                    </table>
-                </div>
+                    </td>
 
-                {/* 3. 分析報表 */}
-                <div className="bg-white p-8 rounded-xl shadow border-4 border-gray-800">
-                    <h2 className="text-3xl font-black text-center mb-8 uppercase underline">{currentProject?.name} 施工分析報表</h2>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
-                        <div>
-                            <h3 className="font-bold text-2xl mb-4 border-l-8 border-blue-900 pl-4">工數分析與結案狀態</h3>
-                            <table className="w-full border-2 border-gray-800 text-center text-xl font-bold mb-6">
-                                <thead className="bg-gray-800 text-white"><tr><th>預計</th><th>實際</th><th>偏差</th></tr></thead>
-                                <tbody>
-                                    <tr><td className="border p-2">{estTotalSum}</td><td className="border p-2">{actTotalSum}</td><td className={`border p-2 ${actTotalSum-estTotalSum > 0 ? "text-red-600" : "text-green-700"}`}>{actTotalSum-estTotalSum}</td></tr>
-                                </tbody>
-                            </table>
-                            <div className="p-6 bg-blue-50 border-4 border-blue-900 rounded-lg flex items-center justify-between shadow-inner">
-                                <h4 className="text-2xl font-black">狀態：{isCompleted ? <span className="text-red-600">已結案</span> : <span className="text-blue-600">施工中</span>}</h4>
-                                <div className="flex items-center gap-2">
-                                    <span className="text-sm font-bold no-print">結案打勾:</span>
-                                    <input type="checkbox" className="w-10 h-10 accent-blue-900 cursor-pointer no-print" checked={isCompleted} onChange={e=>{const ns={...projectStatus,[currentProjectId]:e.target.checked};setProjectStatus(ns);setTimeout(()=>syncToCloud({projectStatus:ns}),500);}}/>
-                                </div>
-                            </div>
-                        </div>
-                        <div className="flex flex-col items-center justify-center">
-                             <h3 className="font-bold text-2xl mb-4 text-center">工數佔比分析</h3>
-                             <div className="w-72 h-72 no-print"><canvas ref={pieRef}></canvas></div>
-                        </div>
-                    </div>
+                    {/* 記事備註 - 最大化欄位 */}
+                    <td className="border p-2">
+                        <textarea 
+                            className="w-full bg-transparent p-1 text-base leading-tight outline-none focus:bg-white focus:ring-1 focus:ring-green-300 rounded" 
+                            rows="2" 
+                            value={data.notes.join('\n')} 
+                            onChange={e => {
+                                const nr = records.map(r => (r.projectId === currentProjectId && r.date === date && r.type === "labor") ? {...r, note: e.target.value} : r);
+                                setRecords(nr);
+                            }}
+                            onBlur={() => syncToCloud()}
+                        />
+                    </td>
+
+                    {/* 操作 */}
+                    <td className="border p-2 no-print">
+                        <button className="bg-red-100 text-red-600 px-3 py-1 rounded-md font-bold hover:bg-red-600 hover:text-white transition-colors" onClick={()=>{
+                            if(confirm("確定刪除此日全部紀錄？")){
+                                const nr = records.filter(r => !(r.projectId === currentProjectId && r.date === date));
+                                setRecords(nr);
+                                setTimeout(() => syncToCloud({records: nr.filter(x => x.projectId === currentProjectId)}), 500);
+                            }
+                        }}>刪除</button>
+                    </td>
+                </tr>
+            ))}
+        </tbody>
+        <tfoot className="bg-green-800 text-white font-black text-xl">
+            <tr>
+                <td className="p-2 border">實際合計</td>
+                <td className="p-2 border">{actTotalLabor}</td>
+                <td className="p-2 border">{actTotalSupport}</td>
+                <td colSpan="3" className="p-2 border text-right pr-10">共 {actTotalSum} 工</td>
+            </tr>
+        </tfoot>
+    </table>
+</div>
+               {/* 3. 施工分析報表 - 已加入機具對比功能 */}
+<div className="bg-white p-8 rounded-xl shadow border-4 border-gray-800">
+    <h2 className="text-3xl font-black text-center mb-8 uppercase underline">
+        {currentProject?.name} 施工分析報表
+    </h2>
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
+        <div className="space-y-8">
+            {/* 1. 工數分析統計 */}
+            <div>
+                <h3 className="font-bold text-2xl mb-4 border-l-8 border-blue-900 pl-4 text-blue-900">1. 工數分析統計</h3>
+                <table className="w-full border-2 border-gray-800 text-center text-xl font-bold">
+                    <thead className="bg-gray-800 text-white">
+                        <tr><th className="p-2">類別</th><th className="p-2">預計</th><th className="p-2">實際</th><th className="p-2">偏差</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td className="border p-2">總工數</td>
+                            <td className="border p-2">{estTotalSum}</td>
+                            <td className="border p-2">{actTotalSum}</td>
+                            <td className={`border p-2 ${actTotalSum > estTotalSum ? "text-red-600" : "text-green-700"}`}>
+                                {actTotalSum - estTotalSum}
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            {/* 2. 機具對比統計 (自動計算預估與實際偏差) */}
+            <div>
+                <h3 className="font-bold text-2xl mb-4 border-l-8 border-green-700 pl-4 text-green-800">2. 機具對比統計 (台)</h3>
+                <table className="w-full border-2 border-gray-800 text-center text-lg font-bold">
+                    <thead className="bg-gray-100">
+                        <tr><th className="p-2 border">機具規格</th><th className="p-2 border">預計</th><th className="p-2 border">實際</th><th className="p-2 border">偏差</th></tr>
+                    </thead>
+                    <tbody>
+                        {(() => {
+                            // 內部邏輯：計算該工程的機具對比
+                            const estStats = {};
+                            currentPlans.forEach(p => {
+                                (p.machines || []).forEach(m => {
+                                    estStats[m.spec] = (estStats[m.spec] || 0) + Number(m.qty || 0);
+                                });
+                            });
+                            const actStats = {};
+                            projectRecords.filter(r => r.type === "crane").forEach(r => {
+                                actStats[r.spec] = (actStats[r.spec] || 0) + (Number(r.hr || 0) / 8);
+                            });
+
+                            const allSpecs = [...new Set([...Object.keys(estStats), ...Object.keys(actStats)])];
+                            if (allSpecs.length === 0) return <tr><td colSpan="4" className="p-4 text-gray-400 text-center">尚無機具紀錄</td></tr>;
+
+                            return allSpecs.map(spec => {
+                                const est = estStats[spec] || 0;
+                                const act = actStats[spec] || 0;
+                                const diff = act - est;
+                                return (
+                                    <tr key={spec}>
+                                        <td className="border p-2 text-left pl-4">{spec}</td>
+                                        <td className="border p-2">{est.toFixed(1)}</td>
+                                        <td className="border p-2">{act.toFixed(1)}</td>
+                                        <td className={`border p-2 ${diff > 0 ? "text-red-600" : diff < 0 ? "text-green-700" : ""}`}>
+                                            {diff > 0 ? `+${diff.toFixed(1)}` : diff.toFixed(1)}
+                                        </td>
+                                    </tr>
+                                );
+                            });
+                        })()}
+                    </tbody>
+                </table>
+            </div>
+
+            {/* 結案與狀態區 */}
+            <div className="p-6 bg-blue-50 border-4 border-blue-900 rounded-lg flex items-center justify-between shadow-inner">
+                <h4 className="text-2xl font-black">結案狀態：{isCompleted ? <span className="text-red-600 font-black">已結案</span> : <span className="text-blue-600">施工中</span>}</h4>
+                <div className="flex items-center gap-2">
+                    <span className="text-sm font-bold no-print">標記結案:</span>
+                    <input 
+                        type="checkbox" 
+                        className="w-10 h-10 accent-blue-900 cursor-pointer no-print" 
+                        checked={isCompleted} 
+                        onChange={e => {
+                            const ns = {...projectStatus, [currentProjectId]: e.target.checked};
+                            setProjectStatus(ns);
+                            setTimeout(() => syncToCloud({projectStatus: ns}), 500);
+                        }}
+                    />
                 </div>
             </div>
+        </div>
+        
+        {/* 圓餅圖 */}
+        <div className="flex flex-col items-center justify-center">
+             <h3 className="font-bold text-2xl mb-4 text-center">實際工數佔比分析</h3>
+             <div className="w-80 h-80 no-print">
+                <canvas ref={pieRef}></canvas>
+             </div>
+        </div>
+    </div>
+</div>
 
             {/* Modal: 登打紀錄 */}
             {modalType === "entry" && (
