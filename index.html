@@ -238,7 +238,7 @@ function App() {
                     <button className="no-print mt-4 bg-blue-100 p-2 rounded font-bold shadow-sm" onClick={()=>{const nl=[...currentPlans,{id:generateId(),task:"",labor:0,support:0,machines:[]}];setProjectPlans({...projectPlans,[currentProjectId]:nl});setTimeout(()=>syncToCloud({plans:nl}),500);}}>+ 新增天序</button>
                 </div>
 
-                {/* 2. 實際明細 - 局部覆蓋代碼 */}
+               {/* 2. 實際明細 */}
 <div className="bg-white p-6 rounded-xl shadow mb-8 border-t-8 border-green-700 print-section">
     <h2 className="text-2xl font-black text-green-800 mb-4 flex justify-between items-center">
         <span>📅 實際明細 - {currentProject?.name} ({currentCompany})</span>
@@ -258,10 +258,7 @@ function App() {
         <tbody>
             {Object.entries(dailyDetails).sort((a,b)=>a[0].localeCompare(b[0])).map(([date, data]) => (
                 <tr key={date} className="hover:bg-green-50 border-b">
-                    {/* 日期欄位 - 加寬顯示 */}
                     <td className="border p-2 font-bold text-xl">{date}</td>
-                    
-                    {/* 外包 - 窄欄位 */}
                     <td className="border p-2">
                         <input 
                             type="number" 
@@ -274,8 +271,6 @@ function App() {
                             onBlur={() => syncToCloud()}
                         />
                     </td>
-
-                    {/* 何鑫 - 窄欄位 */}
                     <td className="border p-2">
                         <input 
                             type="number" 
@@ -288,8 +283,6 @@ function App() {
                             onBlur={() => syncToCloud()}
                         />
                     </td>
-
-                    {/* 機具編輯 */}
                     <td className="border p-2 text-left">
                         <div className="flex flex-col gap-1">
                             {data.raw.filter(r => r.type === "crane").map((m, mi) => (
@@ -329,8 +322,6 @@ function App() {
                             }}>+增機具</button>
                         </div>
                     </td>
-
-                    {/* 記事備註 - 最大化欄位 */}
                     <td className="border p-2">
                         <textarea 
                             className="w-full bg-transparent p-1 text-base leading-tight outline-none focus:bg-white focus:ring-1 focus:ring-green-300 rounded" 
@@ -343,8 +334,6 @@ function App() {
                             onBlur={() => syncToCloud()}
                         />
                     </td>
-
-                    {/* 操作 */}
                     <td className="border p-2 no-print">
                         <button className="bg-red-100 text-red-600 px-3 py-1 rounded-md font-bold hover:bg-red-600 hover:text-white transition-colors" onClick={()=>{
                             if(confirm("確定刪除此日全部紀錄？")){
@@ -367,7 +356,8 @@ function App() {
         </tfoot>
     </table>
 </div>
-               {/* 3. 施工分析報表 - 已加入機具對比功能 */}
+
+{/* 3. 施工分析報表 */}
 <div className="bg-white p-8 rounded-xl shadow border-4 border-gray-800">
     <h2 className="text-3xl font-black text-center mb-8 uppercase underline">
         {currentProject?.name} 施工分析報表
@@ -394,7 +384,7 @@ function App() {
                 </table>
             </div>
 
-            {/* 2. 機具對比統計 (自動計算預估與實際偏差) */}
+            {/* 2. 機具對比統計 */}
             <div>
                 <h3 className="font-bold text-2xl mb-4 border-l-8 border-green-700 pl-4 text-green-800">2. 機具對比統計 (台)</h3>
                 <table className="w-full border-2 border-gray-800 text-center text-lg font-bold">
@@ -403,7 +393,6 @@ function App() {
                     </thead>
                     <tbody>
                         {(() => {
-                            // 內部邏輯：計算該工程的機具對比
                             const estStats = {};
                             currentPlans.forEach(p => {
                                 (p.machines || []).forEach(m => {
@@ -414,10 +403,8 @@ function App() {
                             projectRecords.filter(r => r.type === "crane").forEach(r => {
                                 actStats[r.spec] = (actStats[r.spec] || 0) + (Number(r.hr || 0) / 8);
                             });
-
                             const allSpecs = [...new Set([...Object.keys(estStats), ...Object.keys(actStats)])];
                             if (allSpecs.length === 0) return <tr><td colSpan="4" className="p-4 text-gray-400 text-center">尚無機具紀錄</td></tr>;
-
                             return allSpecs.map(spec => {
                                 const est = estStats[spec] || 0;
                                 const act = actStats[spec] || 0;
