@@ -249,19 +249,103 @@ function App() {
                             <tr><th className="border p-4">日期</th><th className="border p-4">外包</th><th className="border p-4">何鑫</th><th className="border p-4">機具</th><th className="border p-4">記事</th><th className="border p-4 no-print">操作</th></tr>
                         </thead>
                         <tbody>
-                            {Object.entries(dailyDetails).sort((a,b)=>a[0].localeCompare(b[0])).map(([date, data]) => (
-                                <tr key={date} className="hover:bg-green-50 border-b">
-                                    <td className="border p-4 font-bold">{date}</td>
-                                    <td className="border p-4 font-black text-blue-800">{data.labor}</td>
-                                    <td className="border p-4 font-black text-orange-600">{data.support}</td>
-                                    <td className="border p-4 text-sm font-bold">{data.machines.join(', ')}</td>
-                                    <td className="border p-4 italic text-gray-600 text-lg">{data.notes.join('/')}</td>
-                                    <td className="border p-4 no-print">
-                                        <button className="text-red-500 font-bold hover:bg-red-50 px-2 rounded" onClick={()=>{if(confirm("刪除此日期紀錄？")){const nr=records.filter(r=>!(r.projectId===currentProjectId && r.date===date));setRecords(nr);setTimeout(()=>syncToCloud({records:nr.filter(x=>x.projectId===currentProjectId)}),500);}}}>刪除</button>
-                                    </td>
-                                </tr>
-                            ))}
-                        </tbody>
+    {Object.entries(dailyDetails).sort((a,b)=>a[0].localeCompare(b[0])).map(([date, data]) => (
+        <tr key={date} className="hover:bg-green-50 border-b">
+            <td className="border p-4 font-bold">{date}</td>
+            {/* 編輯外包工數 */}
+            <td className="border p-4">
+                <input 
+                    type="number" 
+                    className="w-full text-center font-black text-blue-800 bg-transparent" 
+                    value={data.labor} 
+                    onChange={e => {
+                        const val = Number(e.target.value);
+                        const nr = records.map(r => (r.projectId === currentProjectId && r.date === date && r.type === "labor") ? {...r, labor: val} : r);
+                        setRecords(nr);
+                    }}
+                    onBlur={() => syncToCloud()}
+                />
+            </td>
+            {/* 編輯何鑫工數 */}
+            <td className="border p-4">
+                <input 
+                    type="number" 
+                    className="w-full text-center font-black text-orange-600 bg-transparent" 
+                    value={data.support} 
+                    onChange={e => {
+                        const val = Number(e.target.value);
+                        const nr = records.map(r => (r.projectId === currentProjectId && r.date === date && r.type === "labor") ? {...r, support: val} : r);
+                        setRecords(nr);
+                    }}
+                    onBlur={() => syncToCloud()}
+                />
+            </td>
+            {/* 編輯機具組合 */}
+            <td className="border p-4">
+                <div className="flex flex-col gap-1">
+                    {data.raw.filter(r => r.type === "crane").map((m, mi) => (
+                        <div key={`${date}-m-${mi}`} className="flex items-center gap-1 bg-blue-50 p-1 rounded no-print-flex text-sm">
+                            <select 
+                                className="border rounded font-bold bg-white" 
+                                value={m.spec} 
+                                onChange={e => {
+                                    const nr = records.map(r => r.id === m.id ? {...r, spec: e.target.value} : r);
+                                    setRecords(nr);
+                                    setTimeout(() => syncToCloud({records: nr.filter(x => x.projectId === currentProjectId)}), 200);
+                                }}
+                            >
+                                {machineOptions.map((opt, oi)=><option key={`o-${oi}`} value={opt}>{opt}</option>)}
+                            </select>
+                            <input 
+                                type="number" 
+                                className="w-12 border rounded text-center font-bold" 
+                                value={m.hr} 
+                                onChange={e => {
+                                    const nr = records.map(r => r.id === m.id ? {...r, hr: Number(e.target.value)} : r);
+                                    setRecords(nr);
+                                }}
+                                onBlur={() => syncToCloud()}
+                            />
+                            <button className="text-red-500 font-bold px-1" onClick={() => {
+                                const nr = records.filter(r => r.id !== m.id);
+                                setRecords(nr);
+                                setTimeout(() => syncToCloud({records: nr.filter(x => x.projectId === currentProjectId)}), 200);
+                            }}>✕</button>
+                        </div>
+                    ))}
+                    <button className="text-xs text-blue-600 font-bold mt-1 no-print underline" onClick={() => {
+                        const newMachine = { id: generateId(), projectId: currentProjectId, company: currentCompany, date: date, type: "crane", spec: machineOptions[0], hr: 8 };
+                        const nr = [...records, newMachine];
+                        setRecords(nr);
+                        setTimeout(() => syncToCloud({records: nr.filter(x => x.projectId === currentProjectId)}), 200);
+                    }}>+增機具</button>
+                </div>
+            </td>
+            <td className="border p-4 italic text-gray-600">
+                <textarea 
+                    className="w-full bg-transparent p-1 text-lg" 
+                    rows="1" 
+                    value={data.notes.join('/')} 
+                    onChange={e => {
+                        const val = e.target.value;
+                        const nr = records.map(r => (r.projectId === currentProjectId && r.date === date && r.type === "labor") ? {...r, note: val} : r);
+                        setRecords(nr);
+                    }}
+                    onBlur={() => syncToCloud()}
+                />
+            </td>
+            <td className="border p-4 no-print">
+                <button className="text-red-500 font-bold hover:bg-red-50 px-2 rounded" onClick={()=>{
+                    if(confirm("刪除此日期全部紀錄？")){
+                        const nr = records.filter(r => !(r.projectId === currentProjectId && r.date === date));
+                        setRecords(nr);
+                        setTimeout(() => syncToCloud({records: nr.filter(x => x.projectId === currentProjectId)}), 500);
+                    }
+                }}>刪除</button>
+            </td>
+        </tr>
+    ))}
+</tbody>
                         <tfoot className="bg-green-800 text-white font-black">
                             <tr><td className="p-4 text-right">實際合計：</td><td>{actTotalLabor}</td><td>{actTotalSupport}</td><td colSpan="3" className="text-right pr-10">共 {actTotalSum} 工</td></tr>
                         </tfoot>
