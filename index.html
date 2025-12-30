@@ -175,14 +175,53 @@ function App() {
                     {companies.map(c => <option key={c} value={c}>{c}</option>)}
                 </select>
                 <select className="border-2 p-2 rounded text-blue-900" value={currentProjectId} onChange={e=>setCurrentProjectId(e.target.value)}>
-                    <option value="">選擇工程案</option>
-                    {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-                </select>
-                <button className="bg-blue-600 text-white px-4 py-2 rounded" onClick={()=>{const n=prompt("工程名稱");if(n){const nid=generateId();const nl=[...projects,{id:nid,name:n}];setProjects(nl);syncToCloud({projects:nl});}}}>+ 新增工程</button>
-                <button className="bg-green-700 text-white px-4 py-2 rounded" onClick={exportToExcel}>📊 Excel</button>
-                <button className="bg-blue-800 text-white px-4 py-2 rounded" onClick={exportToWord}>📝 Word</button>
-                <button className="bg-slate-700 text-white px-4 py-2 rounded" onClick={()=>setModalType("manageMachines")}>⚙️ 機具庫</button>
-                <button className="bg-gray-800 text-white px-6 py-2 rounded ml-auto" onClick={()=>window.print()}>🖨️ 列印</button>
+    <option value="">選擇工程案</option>
+    {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+</select>
+
+<button 
+    className="bg-blue-600 text-white px-4 py-2 rounded font-bold" 
+    onClick={()=>{
+        const n=prompt("請輸入新工程名稱");
+        if(n){
+            const nid=generateId();
+            const nl=[...projects,{id:nid,name:n}];
+            setProjects(nl);
+            syncToCloud({projects:nl}); // 即時同步新清單
+        }
+    }}
+>
+    + 新增工程
+</button>
+
+<button 
+    className="bg-red-500 text-white px-4 py-2 rounded font-bold" 
+    onClick={()=>{
+        if(!currentProjectId) return alert("請先選擇要刪除的工程");
+        const targetName = currentProject?.name;
+        if(confirm(`⚠️ 警告：確定要永久刪除「${targetName}」及其所有預測與實際紀錄嗎？此動作無法復原。`)){
+            const newList = projects.filter(p => p.id !== currentProjectId);
+            setProjects(newList);
+            setCurrentProjectId(""); // 重設選擇器
+            
+            // 及時同步：通知 GAS 刪除該工程名稱下的所有資料列
+            syncToCloud({
+                projects: newList,
+                projectName: targetName, // 讓 GAS 知道要 deleteOldData 的對象
+                plans: [],               // 傳送空陣列觸發刪除後不寫入
+                records: []              // 傳送空陣列觸發刪除後不寫入
+            });
+            alert("工程案已從雲端與本機刪除");
+        }
+    }}
+>
+    🗑️ 刪除工程
+</button>
+
+<button className="bg-green-700 text-white px-4 py-2 rounded font-bold" onClick={exportToExcel}>📊 Excel</button>
+<button className="bg-blue-800 text-white px-4 py-2 rounded font-bold" onClick={exportToWord}>📝 Word</button>
+<button className="bg-slate-700 text-white px-4 py-2 rounded font-bold" onClick={()=>setModalType("manageMachines")}>⚙️ 機具庫</button>
+<button className="bg-gray-800 text-white px-6 py-2 rounded ml-auto font-bold" onClick={()=>window.print()}>🖨️ 列印</button>
             </div>
 
             <div id="export-area">
