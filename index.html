@@ -15,10 +15,41 @@
     body { font-size: 20px; font-family: sans-serif; }
     input, select, textarea { font-size: 20px !important; }
     .table-header-darkblue { background-color: #1e3a8a !important; color: white !important; }
-    .actual-detail-table td { font-size: 22px !important; }
+    
+    /* 調整表格欄位，確保內容不被遮蔽 */
+    .actual-detail-table td { 
+        font-size: 22px !important; 
+        padding: 5px !important;
+        overflow: visible !important;
+    }
+
+    /* 解決輸入框在列印時被裁切的問題 */
+    .actual-detail-table input {
+        width: 100% !important;
+        min-width: 0 !important;
+        background: transparent !important;
+    }
+
     @media print {
         .no-print { display: none !important; }
         .no-print-flex { display: none !important; }
+        
+        /* 列印時強制顯示機具文字 */
+        .print-show {
+            display: block !important;
+            font-size: 18px !important;
+            line-height: 1.4 !important;
+        }
+
+        /* 移除輸入框邊框，讓數字像純文字一樣清楚 */
+        input, textarea {
+            border: none !important;
+            box-shadow: none !important;
+            outline: none !important;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+        }
+
         canvas {
             display: block !important;
             max-width: 100% !important;
@@ -30,7 +61,13 @@
             break-inside: avoid !important;
             margin-bottom: 20px;
         }
+        
+        /* 確保表格框線在列印時清晰 */
+        table, th, td {
+            border: 1px solid black !important;
+        }
     }
+
     /* 自訂儲存按鈕動畫 */
     .btn-save-anim { animation: pulse-red 2s infinite; }
     @keyframes pulse-red {
@@ -38,7 +75,7 @@
         70% { box-shadow: 0 0 0 10px rgba(225, 29, 72, 0); }
         100% { box-shadow: 0 0 0 0 rgba(225, 29, 72, 0); }
     }
-</style>
+    </style>
 </head>
 <body class="bg-gray-100 min-h-screen p-4 md:p-8">
     <div id="root"></div>
@@ -351,25 +388,35 @@ function App() {
                                     <td className="border p-2 text-center">
                                         <input type="number" className="w-full text-center font-black text-orange-600 bg-transparent outline-none focus:border-b-2 focus:border-orange-500" value={data.support} onChange={e=>setRecords(records.map(r=>(r.projectId===currentProjectId && r.date===date && r.type==="labor")?{...r,support:Number(e.target.value)}:r))}/>
                                     </td>
-                                    <td className="border p-2 text-left">
-                                        <div className="flex flex-col gap-1">
-                                            {data.raw.filter(r => r.type === "crane").map((m, mi) => (
-                                                <div key={m.id || mi} className="flex items-center gap-1 bg-blue-50 p-1 rounded no-print-flex">
-                                                    <select className="border rounded font-bold bg-white text-xs flex-1" value={m.spec} onChange={e=>setRecords(records.map(r=>r.id===m.id?{...r,spec:e.target.value}:r))}>
-                                                        {machineOptions.map((opt, oi)=><option key={oi} value={opt}>{opt}</option>)}
-                                                    </select>
-                                                    <div className="flex items-center gap-1">
-                                                        <input type="number" className="w-10 border rounded text-center font-bold text-xs" value={m.hr} onChange={e=>setRecords(records.map(r=>r.id===m.id?{...r,hr:Number(e.target.value)}:r))}/>
-                                                        <span className="text-[10px] font-bold text-gray-400">hr</span>
-                                                    </div>
-                                                    <button className="text-red-500 font-bold px-1" onClick={()=>setRecords(records.filter(r=>r.id!==m.id))}>✕</button>
-                                                </div>
-                                            ))}
-                                            <button className="text-xs text-blue-600 font-bold no-print underline" onClick={()=>{
-                                                setRecords([...records, { id: generateId(), projectId: currentProjectId, company: currentCompany, date: date, type: "crane", spec: machineOptions[0], hr: 8 }]);
-                                            }}>+增機具</button>
-                                        </div>
-                                    </td>
+                                    {/* 修改後的機具欄位 TD */}
+<td className="border p-2 text-left">
+    <div className="flex flex-col gap-1">
+        {/* 編輯模式：僅在螢幕顯示 */}
+        {data.raw.filter(r => r.type === "crane").map((m, mi) => (
+            <div key={m.id || mi} className="flex items-center gap-1 bg-blue-50 p-1 rounded no-print-flex">
+                <select className="border rounded font-bold bg-white text-xs flex-1" value={m.spec} onChange={e=>setRecords(records.map(r=>r.id===m.id?{...r,spec:e.target.value}:r))}>
+                    {machineOptions.map((opt, oi)=><option key={oi} value={opt}>{opt}</option>)}
+                </select>
+                <div className="flex items-center gap-1">
+                    <input type="number" className="w-10 border rounded text-center font-bold text-xs" value={m.hr} onChange={e=>setRecords(records.map(r=>r.id===m.id?{...r,hr:Number(e.target.value)}:r))}/>
+                    <span className="text-[10px] font-bold text-gray-400">hr</span>
+                </div>
+                <button className="no-print text-red-500 font-bold px-1" onClick={()=>setRecords(records.filter(r=>r.id!==m.id))}>✕</button>
+            </div>
+        ))}
+        
+        {/* 列印模式：純文字顯示 */}
+        <div className="hidden print-machine-list hidden print:block text-left text-sm font-bold">
+            {data.raw.filter(r => r.type === "crane").map((m, mi) => (
+                <div key={`print-m-${mi}`}>{m.spec}: {m.hr} hr</div>
+            ))}
+        </div>
+
+        <button className="text-xs text-blue-600 font-bold no-print underline" onClick={()=>{
+            setRecords([...records, { id: generateId(), projectId: currentProjectId, company: currentCompany, date: date, type: "crane", spec: machineOptions[0], hr: 8 }]);
+        }}>+增機具</button>
+    </div>
+</td>
                                     <td className="border p-2">
                                         <textarea className="w-full bg-transparent p-1 text-base leading-tight outline-none focus:bg-white rounded" rows="2" value={data.notes.join('\n')} onChange={e=>setRecords(records.map(r=>(r.projectId===currentProjectId && r.date===date && r.type==="labor")?{...r,note:e.target.value}:r))}/>
                                     </td>
