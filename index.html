@@ -307,6 +307,7 @@ function App() {
                         const nid=generateId();
                         const nl=[...projects,{id:nid,name:n}];
                         setProjects(nl);
+                        setCurrentProjectId(nid); // 新增後直接切換到這個工程，不用再手動選下拉選單
                     }
                 }}>+ 新增工程</button>
 
