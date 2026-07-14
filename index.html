@@ -103,6 +103,8 @@ function App() {
     const [projectStatus, setProjectStatus] = React.useState(load("projectStatus", {}));
     const [modalType, setModalType] = React.useState("");
     const [syncStatus, setSyncStatus] = React.useState({ loading: false, lastTime: load("lastSyncTime", "尚未同步") });
+    const [cloudWarning, setCloudWarning] = React.useState(""); // 自動同步失敗時的低調提示（不用 alert 打擾使用者）
+    const [projectVersions, setProjectVersions] = React.useState(load("projectVersions", {})); // {projectId: 版本號} 用來偵測多人同時編輯衝突
     const [entryForm, setEntryForm] = React.useState({ date: new Date().toISOString().split('T')[0], labor: 0, support: 0, note: "", machines: [] });
 
     const GAS_URL = "https://script.google.com/macros/s/AKfycbzc7eXQObf5fkZ4iqje4_I4U3avG9fveDJe3UumMuaH5v0uSo8M75w_e_IbdRiuHtqPSg/exec";
@@ -131,14 +133,18 @@ function App() {
     const estTotalSupport = currentPlans.reduce((s, p) => s + Number(p.support || 0), 0);
     const estTotalSum = estTotalLabor + estTotalSupport;
 
-    // --- 修改：僅手動調用的同步函數（已移除 no-cors，可正確判斷成功/失敗）---
-    const syncToCloud = async (customData = null) => {
+    // --- 修改：僅手動調用的同步函數（已移除 no-cors，可正確判斷成功/失敗，並加入版本號衝突偵測）---
+    const syncToCloud = async (customData = null, skipVersionCheck = false) => {
         if (!currentProjectId && !customData) return false;
         if (syncStatus.loading) return false; // 防止重複點擊造成並發寫入
         setSyncStatus(prev => ({ ...prev, loading: true }));
+        const targetProjectId = customData?.projectId || currentProjectId;
         const payload = {
             company: currentCompany,
-            projectName: currentProject?.name,
+            projectName: customData?.projectName || currentProject?.name,
+            projectId: targetProjectId,
+            clientVersion: skipVersionCheck ? null : (projectVersions[targetProjectId] || 0),
+            skipVersionCheck: skipVersionCheck,
             equipments: customData?.equipments || machineOptions, 
             plans: customData?.plans || currentPlans,
             records: customData?.records || records.filter(r => r.projectId === currentProjectId),
@@ -154,12 +160,24 @@ function App() {
             });
             let result;
             try { result = await res.json(); } catch (parseErr) { throw new Error("伺服器回應格式錯誤，可能未部署為最新版本"); }
+
+            if (result.status === "conflict") {
+                setSyncStatus(prev => ({ ...prev, loading: false }));
+                alert("⚠️ 存檔失敗：這個工程已經被其他人更新過了！\n\n為了避免覆蓋別人剛存的資料，這次的儲存已被取消。\n請先按「🔄 同步雲端(讀取)」抓取最新版本，確認內容後再重新編輯、儲存。");
+                return false;
+            }
             if (!res.ok || result.status !== "ok") {
                 throw new Error(result.message || `伺服器回傳錯誤 (HTTP ${res.status})`);
+            }
+
+            // 存檔成功，更新本地版本號，避免下一次自己存檔時被誤判為衝突
+            if (typeof result.version === "number" && targetProjectId) {
+                setProjectVersions(prev => ({ ...prev, [targetProjectId]: result.version }));
             }
             const time = new Date().toLocaleTimeString();
             setSyncStatus({ loading: false, lastTime: time });
             save("lastSyncTime", time);
+            setCloudWarning("");
             return true;
         } catch (e) {
             setSyncStatus(prev => ({ ...prev, loading: false }));
@@ -177,6 +195,11 @@ function App() {
             const cloud = await response.json();
             const newProjects = cloud.projects ? cloud.projects.map(p => ({ id: String(p["工程ID"] || generateId()), name: String(p["工程名稱"]) })) : [];
             setProjects(newProjects);
+            if (cloud.projects) {
+                const versionMap = {};
+                cloud.projects.forEach(p => { versionMap[String(p["工程ID"])] = Number(p["版本"] || 0); });
+                setProjectVersions(versionMap);
+            }
             if (cloud.equipments) setMachineOptions(sortMachines(cloud.equipments.map(e => e["機具名稱"])));
             if (cloud.plans) {
                 const planMap = {};
@@ -202,9 +225,15 @@ function App() {
                 setRecords(actRecords);
             }
             if (!silent) alert("📥 雲端資料已讀取並同步至本機！");
+            setCloudWarning(""); // 成功讀到最新資料，清除任何舊的警告提示
             setSyncStatus({ loading: false, lastTime: new Date().toLocaleTimeString() });
         } catch (e) {
-            if (!silent) alert("❌ 讀取失敗：" + e.message);
+            if (!silent) {
+                alert("❌ 讀取失敗：" + e.message);
+            } else {
+                // 自動同步失敗時不跳彈窗打擾使用者，但留下一個低調的提示，讓使用者知道目前看到的可能不是最新資料
+                setCloudWarning("⚠️ 自動同步雲端失敗（" + e.message + "），目前顯示的可能不是最新資料，建議手動按「同步雲端(讀取)」");
+            }
             setSyncStatus(prev => ({ ...prev, loading: false }));
         }
     };
@@ -264,10 +293,17 @@ function App() {
         save("projects", projects); save("records", records); save("projectPlans", projectPlans);
         save("machineOptions", machineOptions); save("currentProjectId", currentProjectId);
         save("projectStatus", projectStatus); save("currentCompany", currentCompany);
-    }, [projects, records, projectPlans, machineOptions, currentProjectId, projectStatus, currentCompany]);
+        save("projectVersions", projectVersions);
+    }, [projects, records, projectPlans, machineOptions, currentProjectId, projectStatus, currentCompany, projectVersions]);
 
     return (
         <div className="max-w-7xl mx-auto pb-10">
+            {cloudWarning && (
+                <div className="no-print bg-yellow-100 border-2 border-yellow-500 text-yellow-900 px-4 py-3 rounded-lg mb-3 flex items-center justify-between gap-4">
+                    <span>{cloudWarning}</span>
+                    <button className="bg-yellow-500 text-white px-3 py-1 rounded font-bold shrink-0 hover:bg-yellow-600" onClick={()=>downloadFromCloud(false)}>重新讀取</button>
+                </div>
+            )}
             {/* 導覽列優化：增加明確儲存按鈕 */}
             <div className="no-print bg-white p-6 rounded-xl shadow mb-6 border flex flex-wrap gap-4 items-center font-bold sticky top-0 z-50">
                 <div className="flex items-center gap-2 mr-4 text-sm text-gray-500">
@@ -317,7 +353,7 @@ function App() {
                     const targetId = currentProjectId;
                     if(confirm(`⚠️ 警告：確定要永久刪除「${targetName}」嗎？此動作將立即同步雲端清單。`)){
                         const newList = projects.filter(p => p.id !== targetId);
-                        const ok = await syncToCloud({ projects: newList, projectName: targetName, plans: [], records: [], deletedProjectId: targetId });
+                        const ok = await syncToCloud({ projects: newList, projectName: targetName, projectId: targetId, plans: [], records: [], deletedProjectId: targetId }, true);
                         if (ok) {
                             setProjects(newList);
                             setCurrentProjectId("");
